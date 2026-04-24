@@ -1,0 +1,4 @@
+interface:
+  display_name: "ADR Creator"
+  short_description: "Create repo-grounded architecture decision records."
+  default_prompt: "Create an ADR for this decision. Inspect the provided repo paths first, show the draft in chat, and write only after confirmation."
