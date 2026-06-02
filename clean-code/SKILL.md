@@ -25,7 +25,8 @@ These are the most common AI failures. Violating any is a hard error:
 - **Pointless splitting** — tiny functions that move code without clarifying intent.
 - **Convention drift** — introducing patterns the project doesn't use.
 - **Noise comments** — restating what code already says.
-- **Compressed one-liners** — never collapse logic into a single line unless the language idiom demands it (Go `if err != nil { return err }` is OK; `if(x) return y` in TS/JS is not).
+- **Compressed one-liners** — never put `if` condition and body on the same line in TS/JS (Go `if err != nil { return err }` is OK).
+- **Unreadable conditions** — extract complex conditions into named booleans. If a condition has chained `?.`, negated non-trivial expressions, callbacks, or exceeds ~60 chars, it MUST be extracted into a named variable that reads like English.
 
 ## Loading
 

@@ -33,6 +33,39 @@ Language-specific conventions for TypeScript/JavaScript projects.
 - Maps: `xByY` pattern (`userById`)
 - Files: follow project convention (check existing files first)
 
+## Conditions and Control Flow
+
+- Never put `if` condition and body on the same line
+- Extract into a named boolean when ANY of these are true:
+  - Condition has 2+ chained optional access (`?.`)
+  - Condition uses negation of a non-trivial expression (`!Object.keys(...)`)
+  - Condition contains a callback (`.some()`, `.every()`, `.find()`)
+  - Condition is longer than ~60 characters
+- Named booleans read as positive statements — negate at usage if needed
+
+```ts
+// BAD — compressed, unreadable
+if (!Object.keys(lappValues).length) { return null; }
+if (cell?.formulaDeps?.lappRefs?.some((name) => name in lappValues)) {
+  triggerKeys.add(buildQualifiedKey(sheet.name!, cellKey));
+}
+
+// GOOD — readable, named conditions
+const hasLappValues = Object.keys(lappValues).length > 0;
+
+if (!hasLappValues) {
+  return null;
+}
+
+const hasDependentLappRefs = cell?.formulaDeps?.lappRefs?.some(
+  (name) => name in lappValues,
+);
+
+if (hasDependentLappRefs) {
+  triggerKeys.add(buildQualifiedKey(sheet.name!, cellKey));
+}
+```
+
 ## Error Handling
 
 - Custom errors for business logic: `class InsufficientFundsError extends Error`
@@ -57,7 +90,10 @@ type OrderResult =
 
 export const shipOrder = async (orderId: string): Promise<OrderResult> => {
   const order = await orderRepository.get(orderId);
-  if (!order.canShip) return { status: ORDER_STATUS.CANCELLED, reason: 'Not ready' };
+
+  if (!order.canShip) {
+    return { status: ORDER_STATUS.CANCELLED, reason: 'Not ready' };
+  }
 
   const trackingId = await shippingService.dispatch(order);
   return { status: ORDER_STATUS.SHIPPED, trackingId };
