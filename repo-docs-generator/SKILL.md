@@ -1,6 +1,6 @@
 ---
 name: repo-docs-generator
-description: Create or update repo navigation and canonical docs such as AGENTS.md, README.md, docs/*.md, and .github/copilot-instructions.md. Use when the user wants to bootstrap repo docs, refresh stale repo docs, standardize doc naming, or generate AI-friendly and human-friendly repo guidance from the actual codebase.
+description: Create or update repo navigation and canonical docs such as AGENTS.md, CLAUDE.md, README.md, docs/*.md, and .github/copilot-instructions.md. Use when the user wants to bootstrap repo docs, refresh stale repo docs, standardize doc naming, or generate AI-friendly and human-friendly repo guidance from the actual codebase.
 ---
 
 Create or update a repo's canonical documentation set from the codebase.
@@ -98,6 +98,7 @@ Do not guess mappings for unknown docs. Preserve them as extra docs.
 Use the matching reference file for each canonical doc:
 
 - `AGENTS.md`: [references/agents.md](references/agents.md)
+- `CLAUDE.md`: [references/claude.md](references/claude.md)
 - `.github/copilot-instructions.md`: [references/copilot-instructions.md](references/copilot-instructions.md)
 - `README.md`: [references/readme.md](references/readme.md)
 - `docs/architecture.md`: [references/architecture.md](references/architecture.md)
@@ -108,6 +109,33 @@ Use the matching reference file for each canonical doc:
 - `docs/models.md`: [references/models.md](references/models.md)
 - `docs/onboarding.md`: [references/onboarding.md](references/onboarding.md)
 
+## Ask-before-guess expectations
+
+During repo inspection, identify repo-specific high-risk change categories that require confirmation before implementation. Use those categories in the generated `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md` instead of relying on generic safety language.
+
+Examples by repo type:
+
+- **Backend service**: API contracts, auth, tenant scoping, database migrations, queues, consumers, external integrations, background jobs, file processing
+- **Frontend app**: routing, generated clients, state management, design system usage, user-visible behavior, permissions, accessibility
+- **Infrastructure repo**: deployment targets, secrets, networking, IAM, rollback behavior, environment-specific config
+- **Library/package**: public API, semver, exported types, backwards compatibility, generated artifacts
+
+Every generated `AGENTS.md` must include an `Ask Before Guessing` section (see [references/agents.md](references/agents.md)).
+
+The generated section must be repo-specific. Do not use generic safety language only.
+
+Use this exact question format in the generated section:
+
+```
+I need one decision before I continue.
+
+Question: <specific question>
+Recommended default: <what I would choose and why>
+Options:
+1. <option A> — <tradeoff>
+2. <option B> — <tradeoff>
+```
+
 ## AGENTS.md expectations
 
 `AGENTS.md` is the main repo navigation doc for both humans and AI agents. It should route common tasks toward the right files first, not duplicate the deeper docs line by line.
@@ -117,6 +145,10 @@ Always include real task-routing guidance such as:
 - if changing X, read Y first
 - if validating Y, run Z
 - if changing an API contract, inspect the DTO or boundary files first
+
+## CLAUDE.md expectations
+
+`CLAUDE.md` is the Claude Code entrypoint. Keep it short. It must import `AGENTS.md` using the `@AGENTS.md` directive and add only Claude-specific behavior not covered in `AGENTS.md`. Do not duplicate `AGENTS.md` content.
 
 ## Copilot instructions expectations
 

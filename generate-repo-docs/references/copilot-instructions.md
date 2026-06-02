@@ -91,6 +91,25 @@ Prefer comments that point to issues such as:
 - weak security or trust-boundary handling
 - tests that do not support confidence
 - undocumented exceptions
+- unsupported assumptions about contracts, schema, auth, or external services
+
+## Review Labels
+
+Include an `assumption-risk` label for changes that appear to rely on unsupported assumptions.
+
+### assumption-risk
+
+Use when the change appears to rely on an unsupported assumption about contracts, schema, auth, tenant scoping, external services, queues, file processing, or user-visible behavior.
+
+Comment format:
+
+```
+Issue: The change appears to assume <assumption>, but the repo evidence does not confirm it.
+
+Risk: <why this may break behavior or contracts>
+
+Fix prompt: Ask for confirmation or inspect <specific files/docs/tests> before implementing this behavior.
+```
 
 ## Output Style
 
