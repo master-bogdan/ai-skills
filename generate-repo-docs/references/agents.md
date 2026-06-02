@@ -9,6 +9,7 @@
 - `Repo Map`
 - `Canonical Docs`
 - `Task Routing`
+- `Ask Before Guessing`
 - `Working Rules`
 - `Verification`
 - `Change Safety`
@@ -61,6 +62,49 @@ Split into:
 - `Full Checks`
 
 Use real repo commands only.
+
+### `Ask Before Guessing`
+
+This section must be repo-specific. Identify the actual high-risk change categories from the inspected repo and list them here.
+
+Include:
+
+- when to ask (list repo-specific high-risk areas: API contracts, auth, tenant scoping, migrations, queues, integrations, etc.)
+- when to proceed with a stated assumption (non-blocking, safe default exists)
+- when to stop (blocking ambiguity with no safe default)
+- a pre-change checkpoint format
+- the exact question format
+
+Pre-change checkpoint:
+
+1. Understanding of the task
+2. Assumptions
+3. Files likely to change
+4. Proposed approach
+5. Blocking questions, if any
+
+Ask a focused question before continuing when:
+- the requested behavior is ambiguous
+- there are multiple valid implementation paths with different tradeoffs
+- the change affects repo-specific high-risk areas
+- required environment variables, sample payloads, services, credentials, commands, or expected behavior are missing
+- tests, migrations, rollout, or backwards compatibility expectations are unclear
+
+If the question is blocking, stop and wait.
+
+If the question is non-blocking, state the assumption, use the recommended default, and continue with the smallest safe change.
+
+Use this exact question format:
+
+```
+I need one decision before I continue.
+
+Question: <specific question>
+Recommended default: <what I would choose and why>
+Options:
+1. <option A> — <tradeoff>
+2. <option B> — <tradeoff>
+```
 
 ### `Change Safety`
 
