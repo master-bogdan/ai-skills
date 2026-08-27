@@ -3,11 +3,27 @@
 DRY is about duplicated rules, logic, and contracts that can drift. Not about
 eliminating every repeated line.
 
+## Reuse Before You Create
+
+The most common duplication is reinventing code the project already has. Before
+writing any helper, component, hook, validator, type, or constant:
+
+- Grep the codebase by likely name AND by behavior (e.g. `format`, `Date`,
+  `currency`, existing `Button`, `useDebounce`).
+- Check shared/ui/lib/common modules and the feature's own folder.
+- If a near-match exists, reuse it — or extend it if the gap is small and
+  in-scope. Only create new when nothing fits.
+- Found a duplicate already in the tree? Note it; don't add a third copy.
+
 ## Do
 
 - Extract when business logic appears in multiple places and could diverge
 - Centralize status values, permission checks, validation rules
 - Share DTO/payload shapes that must stay in sync
+
+For plain repeated *code* (not a divergence-prone rule), apply the 3+ rule: only
+dedupe once the same block appears **3+ times**. Two copies stay inline —
+premature extraction is the more common and more expensive mistake.
 
 ## Don't
 

@@ -23,6 +23,32 @@ Language-specific conventions for TypeScript/JavaScript projects.
 - Function declarations for: React components
 - Immutable transforms: `.map()`, `.filter()`, spread — not mutation
 
+## Argument Count — Max 3, Then Object
+
+- Hard cap of **3** parameters. At 4+, collapse them into one typed options object.
+- An object also wins below 3 args when call sites would otherwise pass bare
+  positional booleans or same-typed values that are easy to transpose.
+- Name the type after the operation: `CreateOrderInput`, `SearchParams`.
+- Don't just bag every param into an object — group params that belong to the
+  same concept; keep 1–2 genuinely independent args positional.
+
+```ts
+// BAD — 5 positional args, order is a memory test
+function createUser(name: string, email: string, age: number, isAdmin: boolean, teamId: string) {}
+createUser('Ada', 'ada@x.io', 36, true, 't_1');
+
+// GOOD — one typed object, self-documenting at the call site
+type CreateUserInput = {
+  name: string;
+  email: string;
+  age: number;
+  isAdmin: boolean;
+  teamId: string;
+};
+const createUser = (input: CreateUserInput) => { /* ... */ };
+createUser({ name: 'Ada', email: 'ada@x.io', age: 36, isAdmin: true, teamId: 't_1' });
+```
+
 ## Naming Conventions
 
 - Variables/functions: `camelCase`

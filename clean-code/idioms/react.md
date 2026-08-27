@@ -31,10 +31,41 @@ Language-specific conventions for React projects.
 - No logic in JSX beyond simple conditionals and `.map()`
 - Never nest ternaries more than one level
 
+## Memoization — Off By Default
+
+`useMemo`, `useCallback`, and `React.memo` are NOT clean-code defaults. They add
+noise, dependency arrays that drift, and bugs. Reach for them only with a
+concrete, statable reason. If you can't name the reason, don't add them.
+
+Add memoization ONLY when one is true:
+- The value is a dependency of another hook (`useEffect`/`useMemo`) and an
+  unstable reference would loop or misfire.
+- The value/callback is passed to a child that is genuinely expensive AND
+  wrapped in `React.memo`.
+- The computation itself is measurably heavy (big list transform, parsing) on a
+  hot render path.
+
+Do NOT memoize:
+- Cheap computations — `const total = items.reduce(...)` runs fine every render.
+- Inline handlers on plain DOM elements — `onClick={() => onCancel(id)}` is fine.
+- Values passed to non-memoized children (memo does nothing there).
+- "Just in case" / "for perf" with no measurement.
+
+```tsx
+// BAD — memoizing trivial work; deps array is pure overhead
+const fullName = useMemo(() => `${first} ${last}`, [first, last]);
+const handleClick = useCallback(() => onSelect(id), [onSelect, id]);
+return <button onClick={handleClick}>{fullName}</button>;
+
+// GOOD — plain value, plain handler
+const fullName = `${first} ${last}`;
+return <button onClick={() => onSelect(id)}>{fullName}</button>;
+```
+
 ## Anti-Patterns to Reject
 
 - `useEffect` to sync derived state (compute it directly)
-- `React.memo` / `useCallback` on everything without measured need
+- Needless `useMemo`/`useCallback`/`React.memo` (see Memoization above)
 - Props bags with 10+ unrelated fields (split the component)
 - `forwardRef` + `useImperativeHandle` when a callback prop works
 - Hooks that secretly do rendering logic (they're components in disguise)
