@@ -5,7 +5,7 @@ coherent purpose.
 
 ## Do
 
-- Keep functions under ~40 lines
+- Treat ~40 lines as a prompt to look for a second responsibility, not as a limit to split under
 - Use early returns to flatten control flow
 - Split when each piece has a genuinely distinct responsibility
 - Separate validation, transformation, persistence, and side effects

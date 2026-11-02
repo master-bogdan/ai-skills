@@ -6,8 +6,8 @@ Language-specific conventions for React projects.
 
 - Function declarations: `export function MyComponent() {}`
 - One component per file
-- Props interface co-located, destructured in signature
-- Keep under 80 lines — extract when responsibility is genuinely distinct
+- Props type co-located, destructured in signature
+- Split when a piece has a genuinely distinct responsibility, not to hit a line count
 - Composition over prop drilling: children, render props, context
 
 ## Hooks
@@ -96,15 +96,17 @@ A 50-line component does NOT need a folder with 5 files.
 ## Example
 
 ```tsx
-interface OrderCardProps {
+type OrderCardProps = {
   order: Order;
   onCancel: (id: string) => void;
-}
+};
 
 export function OrderCard({ order, onCancel }: OrderCardProps) {
   const isOverdue = order.dueAt < Date.now();
 
-  if (order.status === 'cancelled') return null;
+  if (order.status === 'cancelled') {
+    return null;
+  }
 
   return (
     <Card>

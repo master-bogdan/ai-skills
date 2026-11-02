@@ -73,7 +73,7 @@ createUser({ name: 'Ada', email: 'ada@x.io', age: 36, isAdmin: true, teamId: 't_
 // BAD — compressed, unreadable
 if (!Object.keys(lappValues).length) { return null; }
 if (cell?.formulaDeps?.lappRefs?.some((name) => name in lappValues)) {
-  triggerKeys.add(buildQualifiedKey(sheet.name!, cellKey));
+  triggerKeys.add(buildQualifiedKey(sheet.name, cellKey));
 }
 
 // GOOD — readable, named conditions
@@ -88,7 +88,7 @@ const hasDependentLappRefs = cell?.formulaDeps?.lappRefs?.some(
 );
 
 if (hasDependentLappRefs) {
-  triggerKeys.add(buildQualifiedKey(sheet.name!, cellKey));
+  triggerKeys.add(buildQualifiedKey(sheet.name, cellKey));
 }
 ```
 

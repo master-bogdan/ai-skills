@@ -53,8 +53,9 @@ const createOrder = async (req: Request) => {
   ...
 };
 
-// GOOD — infrastructure injected or abstracted
+// GOOD — business logic talks to the repository, never to the DB client
 const createOrder = async (input: CreateOrderInput): Promise<Order> => {
-  return orderRepository.create(input);
+  const total = calculateTotal(input.items);
+  return orderRepository.create({ ...input, total });
 };
 ```
