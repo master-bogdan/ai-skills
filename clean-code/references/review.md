@@ -25,17 +25,21 @@ Done when each check passed or its skip is named.
 - **Base, always explicit.** A PR's base is `base_ref` from `--since`. Otherwise use the base the user named, or ask.
   Compare from the merge-base (`git diff <base>...HEAD`), never from the base's tip.
 - **PR:** review the code at the PR head in a worktree of the repo's clone, so your own checkout stays untouched.
+  Fetch the base first (`git -C <clone> fetch origin <base_ref>`), so the diff and the rules use the current base, then
+  `git -C <clone> fetch origin pull/<N>/head` and `git -C <clone> worktree add <scratch>/pr<N> FETCH_HEAD`.
 - **Re-review** (`last_reviewed_sha` is set): new findings belong on the lines in `changed_since_last_review`, except
-  a traced blocker anywhere. If `force_pushed` is true, review the whole PR. Repeat nothing raised in `open_threads`,
-  `closed_threads` or `other_threads`. Your `open_threads` (unresolved, or resolved by someone else after your last
-  word) get verdicts in step 5. If `summary_missing` is set, tell the user that review went out without its summary.
+  a traced blocker anywhere. If `whole_pr` is set (it says why: a force-push, or more changed files than GitHub's
+  compare lists), review the whole PR. Repeat nothing raised in `open_threads`, `closed_threads` or `other_threads`.
+  Your `open_threads` (unresolved, or resolved by someone else without a settling reply from you) get verdicts in
+  step 5. If `summary_missing` is set, tell the user that review went out without its summary.
 - **Uncommitted changes** (reviewing another agent's work): `git diff HEAD` plus untracked files. Skip the sub-agents:
   run check.py and the clean-code rules, reinvention and correctness briefs yourself, then rule on the writer's "Needs
   your decision" items (accept with the reason, or reject with what to do instead). Report locally.
 - **Ticket:** find it from the branch name, commits, PR title or body. When it links PRs in other repos, the Spec
   agent reads them for context.
 
-Done when you can state base, merge-base, head, changed files, ticket, and mode (first review, re-review, force-pushed).
+Done when you can state base, merge-base, head, changed files, ticket, and mode (first review, re-review, whole-PR
+re-review).
 
 ## 3. Rules: the repo's first, this skill's otherwise
 
@@ -106,6 +110,9 @@ Re-review thread verdicts (yours only, including comments you wrote by hand; oth
 | `partly_fixed` | some of it is left | "Partly fixed: what's left, `path:line`" | yes |
 | `open` | no relevant change, or the author's pushback doesn't hold | "Still open: why, `path:line`" | yes |
 | `accepted` | the author's reason holds (checked), or a follow-up links a ticket | "Agreed: why." | no |
+
+Open each reply with its verdict as in the table: the next re-review counts a thread as settled only after your
+"Fixed …" or "Agreed: …".
 
 Done when every finding has a label or a not-posted reason, and every thread a verdict and a reply.
 

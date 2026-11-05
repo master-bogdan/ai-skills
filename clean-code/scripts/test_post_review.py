@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Offline tests for post_review.py (no network). Run: python3 scripts/test_post_review.py"""
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -56,12 +60,16 @@ class T(unittest.TestCase):
                          "open threads not accounted for in previo")
     def test_awaits_verdict(self):
         def thread(resolved, by=None, replies=()):
-            return {"resolved": resolved, "resolved_by": by, "replies": [{"author": a} for a in replies]}
-        self.assertTrue(pr.awaits_verdict(thread(False, replies=["me"]), "me"))
-        self.assertFalse(pr.awaits_verdict(thread(True, "me", ["dev"]), "me"))
-        self.assertTrue(pr.awaits_verdict(thread(True, "dev", ["dev"]), "me"))  # the author answered and resolved
+            return {"resolved": resolved, "resolved_by": by,
+                    "replies": [{"author": a, "body": b} for a, b in replies]}
+        fixed, agreed, still_open = ("me", "Fixed in `abc1234`."), ("me", "**Agreed:** fine."), ("me", "Still open: x")
+        self.assertTrue(pr.awaits_verdict(thread(False, replies=[fixed]), "me"))
+        self.assertFalse(pr.awaits_verdict(thread(True, "me", [("dev", "done")]), "me"))
+        self.assertTrue(pr.awaits_verdict(thread(True, "dev", [("dev", "done")]), "me"))  # the author answered and resolved
         self.assertTrue(pr.awaits_verdict(thread(True, "dev"), "me"))  # resolved without a word
-        self.assertFalse(pr.awaits_verdict(thread(True, "dev", ["dev", "me"]), "me"))  # you had the last word
+        self.assertFalse(pr.awaits_verdict(thread(True, "dev", [("dev", "done"), fixed]), "me"))
+        self.assertFalse(pr.awaits_verdict(thread(True, "dev", [agreed]), "me"))
+        self.assertTrue(pr.awaits_verdict(thread(True, "dev", [still_open]), "me"))  # resolved over your "Still open"
     def test_thread_summary(self):
         node = {"id": "T1", "isResolved": True, "isOutdated": False, "path": "a.ts", "line": 3,
                 "resolvedBy": {"login": "dev"},
@@ -97,6 +105,81 @@ class T(unittest.TestCase):
         self.assertEqual(len(probs), 1, probs)
         self.assertIn("finding 1", probs[0])
         self.assertEqual(pr.check_findings(spec, {"src/a.ts": {3, 4, 7}}, None), [])
+
+    def test_unlabelled_open_thread_blocks_approval(self):
+        rules = pr.with_defaults({"source": "none"}, 3)[0]
+        self.assertEqual(pr.status(rules, set()), "APPROVE")
+        self.assertEqual(pr.status(rules, {""}), "COMMENT")
+        self.assertEqual(pr.status(rules, {"", "[MUST FIX]"}), "REQUEST_CHANGES")
+        self.assertEqual(pr.status(rules, {"[SUGGESTION]"}), "APPROVE")
+    def test_threads_from_pages(self):
+        def node(i, more=False):
+            return {"id": f"T{i}", "isResolved": False, "isOutdated": False, "path": "a.ts", "line": i, "resolvedBy": None,
+                    "comments": {"pageInfo": {"hasNextPage": more}, "nodes": [
+                        {"databaseId": i, "url": f"u{i}", "body": "[NIT PICK] t", "author": {"login": "me"},
+                         "pullRequestReview": {"databaseId": 9, "state": "COMMENTED"}}]}}
+        def page(*nodes):
+            return {"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": list(nodes)}}}}}
+        threads = pr.threads_from_pages([page(node(1)), page(node(2))])
+        self.assertEqual([t["comment_id"] for t in threads], [1, 2])
+        with self.assertRaises(SystemExit) as stop:
+            pr.threads_from_pages([page(node(1)), page(node(3, more=True))])
+        self.assertIn("a.ts:3", str(stop.exception.code))
+    def test_link_comments_reads_every_page(self):
+        spec = dict(SPEC, standard=pr.with_defaults({"source": "none"}, 3)[0], findings=[
+            {"label": "[SUGGESTION]", "title": t, "path": "src/a.ts", "line": 3, "why": "w", "evidence": "e", "fix": "f"}
+            for t in ("one", "two")])
+        pr.payload(spec, [])
+        pages = [[{"body": pr.render(spec, f)[0], "html_url": f"https://c/{i}"}] for i, f in enumerate(spec["findings"])]
+        calls = []
+        def fake_gh(*args):
+            calls.append(args)
+            return json.dumps(pages) if "--slurp" in args else ""
+        real, pr.gh = pr.gh, fake_gh
+        try:
+            body = pr.link_comments(spec, {"id": 5}, [])
+        finally:
+            pr.gh = real
+        self.assertIn("[one](https://c/0)", body)
+        self.assertIn("[two](https://c/1)", body)
+        self.assertIn("PUT", calls[-1])
+    def test_head_is_kept(self):
+        findings = {"repo": "o/r", "pr": 1, "verdict": "v", "standard": {"source": "none"}, "findings": []}
+        def run(spec):
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+                json.dump(spec, handle)
+            real, pr.load_pr = pr.load_pr, lambda repo, number: ({"headRefOid": "b" * 40}, {})
+            err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(err):
+                    code = pr.main(["post_review.py", handle.name])
+            finally:
+                pr.load_pr = real
+                os.unlink(handle.name)
+            return code, err.getvalue()
+        code, err = run(findings)
+        self.assertEqual(code, 1)
+        self.assertIn("missing head", err)
+        code, err = run(dict(findings, head="a" * 40))
+        self.assertEqual(code, 1)
+        self.assertIn("the PR moved from aaaaaaaa to bbbbbbbb", err)
+
+    def test_changed_since_cap(self):
+        patch = "@@ -1,1 +1,2 @@\n ctx\n+new"
+        def compare(count):
+            files = [{"filename": f"f{i}.ts", "patch": patch} for i in range(count)]
+            return lambda *args: json.dumps({"status": "ahead", "files": files})
+        diff = {"f0.ts": {1, 2}, "f299.ts": {1, 2}}
+        real = pr.gh
+        try:
+            pr.gh = compare(299)
+            self.assertEqual(pr.changed_since("o/r", "a", "b", diff), ({"f0.ts": {2}}, None))
+            pr.gh = compare(300)  # f299.ts and beyond may be missing from GitHub's list
+            changed, whole_pr = pr.changed_since("o/r", "a", "b", diff)
+        finally:
+            pr.gh = real
+        self.assertIsNone(changed)
+        self.assertIn("at most 300 files", whole_pr)
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

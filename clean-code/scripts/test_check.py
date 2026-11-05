@@ -120,6 +120,11 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(rules(block), [(2, "wrapper")])
         self.assertEqual(rules("const start = () => void recompute();\n"), [(1, "wrapper")])
 
+    def test_transforming_arguments_are_not_wrappers(self):
+        self.assertEqual(rules("const saveCents = (n) => save(n * 100);\n"), [])
+        self.assertEqual(rules("const loadOrZero = (n) => load(n ?? 0);\n"), [])
+        self.assertEqual(rules("const run = (...args) => exec(...args);\n"), [(1, "wrapper")])
+
     def test_exported_forwarders_are_left_to_review(self):
         self.assertEqual(rules("export const selectLastRecomputedAt = (state) => selectX(state);\n"), [])
         self.assertEqual(rules("export const selectA = (state) => state.a.b;\n"), [])
@@ -261,6 +266,24 @@ class HookTests(unittest.TestCase):
         self.assertIn("b.ts:1  helper  <- also defined in: a.ts:1", reason)
         self.assertIn("Potential duplicate", reason)
         self.assertEqual(run(repo, sys.executable, hook, stdin=stop).stdout, "")
+
+    def test_commit_before_stop_still_reports_duplicates(self):
+        repo = make_repo(self)
+        write(repo, "a.ts", "export const helper = (x) => x * 2;\n")
+        commit(repo, "base")
+        path = write(repo, "b.ts", "export const helper = (x) => x + 1;\n")
+        session = f"test-{uuid.uuid4()}"
+        state = os.path.join(tempfile.gettempdir(), "clean-code-hooks", f"{session}.json")
+        self.addCleanup(lambda: os.path.exists(state) and os.remove(state))
+        hook = os.path.join(SCRIPTS, "hook.py")
+
+        edit = {"hook_event_name": "PostToolUse", "session_id": session, "tool_input": {"file_path": path}}
+        run(repo, sys.executable, hook, stdin=json.dumps(edit))
+        commit(repo, "the agent commits before its final reply")
+
+        stop = json.dumps({"hook_event_name": "Stop", "session_id": session})
+        reason = json.loads(run(repo, sys.executable, hook, stdin=stop).stdout)["reason"]
+        self.assertIn("b.ts:1  helper  <- also defined in: a.ts:1", reason)
 
 
 if __name__ == "__main__":

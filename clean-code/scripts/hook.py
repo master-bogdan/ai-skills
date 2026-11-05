@@ -8,7 +8,8 @@ Stop / SubagentStop: if this session edited code and violations, kept exceptions
   the agent hasn't been told about yet, blocks the stop once with the list, so the agent
   fixes them, lists them for the user under "Needs your decision", or looks at both names.
 
-Sessions that never edited a file (e.g. a reviewer) are never blocked.
+Sessions that never edited a file (e.g. a reviewer) are never blocked. Lines count as changed since the commit the
+session started from in each repo, so committing before the final reply hides nothing from the Stop check.
 """
 
 import json
@@ -33,7 +34,7 @@ def load_state(session_id):
         with open(os.path.join(STATE_DIR, f"{session_id}.json")) as fh:
             return json.load(fh)
     except (OSError, ValueError):
-        return {"files": [], "reported": []}
+        return {"files": [], "reported": [], "bases": {}}
 
 
 def save_state(session_id, state):
@@ -49,8 +50,18 @@ def repo_root(path):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def targets_for(files):
-    """Map files to {repo-relative or absolute path: changed lines or None}, chdir-ing per repo."""
+def baseline(root, recorded):
+    """The commit the session started from in root while it is still an ancestor of HEAD (no rebase or branch switch
+    since), else HEAD."""
+    if recorded and subprocess.run(["git", "-C", root, "merge-base", "--is-ancestor", recorded, "HEAD"],
+                                   capture_output=True).returncode == 0:
+        return recorded
+    return "HEAD"
+
+
+def targets_for(files, bases):
+    """Map files to (root, {repo-relative or absolute path: changed lines or None}, base), chdir-ing per repo. Lines
+    count as changed since the session's baseline in that repo (bases: {root: commit})."""
     by_root = {}
     for path in files:
         if os.path.isfile(path):
@@ -58,26 +69,27 @@ def targets_for(files):
     results = []
     for root, paths in by_root.items():
         if root is None:
-            results.append((None, {p: None for p in paths}))
+            results.append((None, {p: None for p in paths}, None))
             continue
         os.chdir(root)
-        changed = check.changed_lines("HEAD")
+        base = baseline(root, bases.get(root))
+        changed = check.changed_lines(base)
         relative = [os.path.relpath(p, root) for p in paths]
-        results.append((root, {r: changed[r] for r in relative if r in changed}))
+        results.append((root, {r: changed[r] for r in relative if r in changed}, base))
     return results
 
 
-def run_checks(files):
+def run_checks(files, bases):
     """Violations, kept exceptions and same/similar-name lines for the given files, per repo."""
     findings, exceptions, names = [], [], []
-    for root, targets in targets_for(files):
+    for root, targets, base in targets_for(files, bases):
         if root:
             os.chdir(root)
-        f, e, _, symbols = check.collect(targets, "HEAD" if root else None)
+        f, e, _, symbols = check.collect(targets, base)
         findings += f
         exceptions += e
         if root:
-            names += check.related(symbols, check.added_files("HEAD") & set(targets))
+            names += check.related(symbols, check.added_files(base) & set(targets))
     return findings, exceptions, names
 
 
@@ -87,13 +99,18 @@ def on_edit(event):
         return 0
     session_id = event.get("session_id", "default")
     state = load_state(session_id)
+    bases = state.setdefault("bases", {})
+    root = repo_root(path)
+    head = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True) if root else None
+    if root and root not in bases and head.returncode == 0:
+        bases[root] = head.stdout.strip()  # the edit hasn't been committed yet, so this is the session's baseline
     if path not in state["files"]:
         state["files"].append(path)
-        save_state(session_id, state)
+    save_state(session_id, state)
 
     findings = []
-    for root, targets in targets_for([path]):  # one file, so targets_for has left us in its repo
-        findings += check.collect(targets, "HEAD" if root else None)[0]
+    for _, targets, base in targets_for([path], bases):  # one file, so targets_for has left us in its repo
+        findings += check.collect(targets, base)[0]
     if not findings:
         return 0
     lines = ["clean-code: the edit you just made breaks the skill's rules.", check.format_findings(findings), FIX_OR_FLAG]
@@ -114,7 +131,7 @@ def on_stop(event):
     if event.get("stop_hook_active") or not state["files"]:
         return 0
 
-    findings, exceptions, names = run_checks(state["files"])
+    findings, exceptions, names = run_checks(state["files"], state.get("bases", {}))
     new_names = [n for n in names if n not in state["reported"]]
     keys = [f"{f[0]}:{f[2]}:{f[4]}" for f in findings + exceptions]
     new_keys = [k for k in keys if k not in state["reported"]] + new_names

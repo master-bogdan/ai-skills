@@ -8,7 +8,8 @@ Usage:
   python3 post_review.py <findings.json> --draft     create the draft; only you see it until you submit it in GitHub
 
 Input:
-  {"repo": "owner/name", "pr": 123, "verdict": "One sentence: the main risk, or why it is safe to merge.",
+  {"repo": "owner/name", "pr": 123, "head": "head_sha from --since: the commit the review read",
+   "verdict": "One sentence: the main risk, or why it is safe to merge.",
    "body": "optional: only what has no line (a question, a cross-cutting note)",
    "standard": {                                                   only what the repo's base branch states
      "source": "origin/dev:.github/copilot-instructions.md",       required: where the rules were read, or "none"
@@ -33,9 +34,11 @@ dry run says which rules came from the defaults.
 Citations: every `path:line` or `path:12-20` in a comment's text must exist at the head commit; the script turns each
 into a link pinned to that commit. A file name without its folder is rejected. Links don't count toward max_chars.
 
+Head: the draft is attached to `head`. If the PR has moved since, nothing is created: review the new commits first.
+
 Re-review: `previous` must list every thread in `open_threads` from --since, each with a verdict. A thread of yours is
-open until you have the last word: unresolved, or resolved by someone else with no reply from you after it (authors
-often resolve their own threads). `closed_threads` (yours, settled) and `other_threads` are read only to avoid repeats.
+open until it is settled: resolved by you, or resolved by someone else after your last reply settled it ("Fixed …" or
+"Agreed: …"). Authors often resolve their own threads, including after a "Still open" reply. `closed_threads` (yours, settled) and `other_threads` are read only to avoid repeats.
 Replies go into the draft (a fixed one defaults to "Fixed in <head>."); open and partly fixed threads count toward
 the status. New findings must sit on lines changed since your last review, unless their label requests changes.
 
@@ -63,6 +66,7 @@ STATUS_NAMES = {"REQUEST_CHANGES": "Request changes", "COMMENT": "Comment", "APP
 STATUS_HEADINGS = {"REQUEST_CHANGES": "🔴 Changes requested", "COMMENT": "🟡 Changes recommended", "APPROVE": "🟢 Approved"}
 LABEL_MARKS = {"[MUST FIX]": "🔴", "[QUESTION]": "🟠", "[SUGGESTION]": "🟡", "[OPTIONAL]": "🔵", "[NIT PICK]": "⚪"}
 VERDICTS = {"fixed": "Fixed", "partly_fixed": "Partly fixed", "open": "Still open", "accepted": "Accepted"}
+SETTLING_REPLIES = ("fixed", "agreed")  # how the replies that close a thread open (references/review.md step 5)
 DEFAULT_STANDARD = {
     "labels": ["[MUST FIX]", "[SUGGESTION]", "[QUESTION]", "[OPTIONAL]", "[NIT PICK]"],
     "request_changes": ["[MUST FIX]"],
@@ -75,13 +79,16 @@ DEFAULT_LIMITS = [  # (most counted files, limits): the tiers of the sheets repo
     (None, {"[SUGGESTION]": 12, "[QUESTION]": 6, "[OPTIONAL]+[NIT PICK]": 4}),
 ]
 LABEL_RULES = ("request_changes", "comment", "limits")
+COMPARE_FILE_CAP = 300  # GitHub's compare API lists at most this many changed files
 THREADS_QUERY = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
         nodes { id isResolved isOutdated path line resolvedBy { login }
-                comments(first: 50) { nodes { databaseId url body author { login } pullRequestReview { databaseId state } } } }
+                comments(first: 100) { pageInfo { hasNextPage }
+                                       nodes { databaseId url body author { login } pullRequestReview { databaseId state } } } }
       }
     }
   }
@@ -153,6 +160,16 @@ def thread_summary(node):
             "replies": [{"author": (r["author"] or {}).get("login"), "body": r["body"].strip()} for r in replies]}
 
 
+def threads_from_pages(pages):
+    """Every review thread across the GraphQL pages. Stops when a thread has more comments than one page holds."""
+    nodes = [node for page in pages for node in page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]]
+    crowded = [f"{node['path']}:{node['line']}" for node in nodes if node["comments"]["pageInfo"]["hasNextPage"]]
+    if crowded:
+        sys.exit("Stopped: these threads have more than 100 comments, which this script can't read in full: "
+                 + ", ".join(crowded))
+    return [thread_summary(node) for node in nodes]
+
+
 def to_ranges(lines):
     ranges, start = [], None
     for line in sorted(lines):
@@ -169,38 +186,43 @@ def to_ranges(lines):
 
 
 def changed_since(repo, last_sha, head, diff):
-    """{path: lines} of the PR diff added since last_sha, or None when that commit is gone or was force-pushed over."""
+    """({path: lines} of the PR diff added since last_sha, None), or (None, why the whole PR needs a review)."""
     try:
         data = json.loads(gh("api", f"repos/{repo}/compare/{last_sha}...{head}"))
     except subprocess.CalledProcessError:
-        return None
+        return None, "your last reviewed commit is no longer on GitHub"
     if data.get("status") not in ("ahead", "identical"):
-        return None
+        return None, "the branch was force-pushed since your last review"
+    files = data.get("files", [])
+    if len(files) >= COMPARE_FILE_CAP:
+        return None, f"GitHub lists at most {COMPARE_FILE_CAP} files changed since your last review"
     changed = {}
-    for item in data.get("files", []):
+    for item in files:
         pr_lines = diff.get(item["filename"], set())
         added = new_side(item["patch"])[1] if item.get("patch") else pr_lines
         if added & pr_lines:
             changed[item["filename"]] = added & pr_lines
-    return changed
+    return changed, None
 
 
 def awaits_verdict(thread, me):
-    """True until you have the last word: unresolved, or resolved by someone else with no reply from you after it."""
+    """True until settled: resolved by you, or resolved by someone else after your last reply settled it."""
     if not thread["resolved"]:
         return True
     if thread["resolved_by"] == me:
         return False
-    return not (thread["replies"] and thread["replies"][-1]["author"] == me)
+    last = thread["replies"][-1] if thread["replies"] else None
+    settled = last and last["author"] == me and last["body"].lstrip("*_ ").lower().startswith(SETTLING_REPLIES)
+    return not settled
 
 
 def load_previous(repo, pr, head, diff):
     """Your open draft, your last review and what changed since, and the PR's threads (yours open or closed, others')."""
     me = gh("api", "user", "-q", ".login").strip()
     owner, name = repo.split("/")
-    data = json.loads(gh("api", "graphql", "-f", f"query={THREADS_QUERY}", "-F", f"owner={owner}", "-F",
-                         f"name={name}", "-F", f"number={pr}"))
-    threads = [thread_summary(n) for n in data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]]
+    pages = json.loads(gh("api", "graphql", "--paginate", "--slurp", "-f", f"query={THREADS_QUERY}", "-F",
+                          f"owner={owner}", "-F", f"name={name}", "-F", f"number={pr}"))
+    threads = threads_from_pages(pages)
     mine = [t for t in threads if t["author"] == me and not t["pending"]]  # a draft's threads belong to the draft
     reviews = [r for page in json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{pr}/reviews"))
                for r in page if r["user"]["login"] == me]
@@ -210,10 +232,10 @@ def load_previous(repo, pr, head, diff):
     opened = {t["review_id"] for t in mine}
     with_threads = [r for r in submitted if r["id"] in opened]  # an approval or a reply has no summary of its own
     lost = with_threads[-1] if with_threads and not with_threads[-1]["body"].strip() else None
-    since = changed_since(repo, last_sha, head, diff) if last_sha else None
+    since, whole_pr = changed_since(repo, last_sha, head, diff) if last_sha else (None, None)
     return {"me": me, "pending_review": pending[0] if pending else None, "last_reviewed_sha": last_sha,
             "summary_missing": lost["html_url"] if lost else None,
-            "force_pushed": bool(last_sha) and since is None, "changed_since": since,
+            "whole_pr": whole_pr, "changed_since": since,
             "open_threads": [t for t in mine if awaits_verdict(t, me)],
             "closed_threads": [t for t in mine if not awaits_verdict(t, me)],
             "other_threads": [t for t in threads if t["author"] != me]}
@@ -360,8 +382,8 @@ def status(standard, labels):
         return "COMMENT"
     if labels & set(standard.get("request_changes", [])):
         return "REQUEST_CHANGES"
-    if labels & set(standard.get("comment", [])):
-        return "COMMENT"
+    if labels & set(standard.get("comment", [])) or labels - set(standard.get("labels") or []):
+        return "COMMENT"  # an open thread without a known label (a hand-written comment) still needs an answer
     return "APPROVE"
 
 
@@ -426,13 +448,14 @@ def link_comments(spec, posted, threads):
     the comments can't be matched."""
     base = f"repos/{spec['repo']}/pulls/{spec['pr']}/reviews/{posted['id']}"
     try:
-        by_body = {c["body"]: c["html_url"] for c in json.loads(gh("api", "--paginate", f"{base}/comments?per_page=100"))}
+        pages = json.loads(gh("api", "--paginate", "--slurp", f"{base}/comments?per_page=100"))
+        by_body = {c["body"]: c["html_url"] for page in pages for c in page}
         links = [by_body.get(render(spec, finding)[0]) for finding in spec.get("findings", [])]
         if None in links:
             return None
         body = review_body(spec, threads, links)
         gh("api", base, "--method", "PUT", "-f", f"body={body}")
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, ValueError):
         return None
     return body
 
@@ -489,11 +512,17 @@ def main(argv):
     spec.setdefault("standard", {})
     problems = [] if str(spec.get("verdict", "")).strip() else [
         "missing verdict: one sentence with the main risk, or why it is safe to merge"]
+    if len(str(spec.get("head", ""))) < 7:
+        problems.append("missing head: head_sha from --since, the commit the review read")
     problems += check_standard(spec["standard"])
     if problems:
         print("Not created:\n" + "\n".join(f"  - {p}" for p in problems), file=sys.stderr)
         return 1
     info, diff = load_pr(spec["repo"], spec["pr"])
+    if not info["headRefOid"].startswith(spec["head"]):
+        print(f"Not created: the PR moved from {spec['head'][:8]} to {info['headRefOid'][:8]} since the review. Review "
+              "the new commits (a re-review), then set head to the new SHA.", file=sys.stderr)
+        return 1
     spec.update(head=info["headRefOid"], sizes={})
     previous = load_previous(spec["repo"], spec["pr"], spec["head"], diff)
     spec["last_reviewed_sha"] = previous["last_reviewed_sha"]

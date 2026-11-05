@@ -13,6 +13,8 @@ submitting all belong to the user, so the skill has no path that submits, resolv
    the dry run names them. If the repo prescribes a comment template other than label/title + Why it matters /
    Evidence / Recommended change, write each finding's `body` to that template.
 2. **Write the findings file:**
+   - `head`: `head_sha` from `--since`, the commit the agents read. If the PR moves before the draft, the script stops:
+     review the new commits as a re-review, then update `head`.
    - `verdict`: one sentence, the main risk or why it's safe to merge.
    - `findings`: every labelled finding, anchored to a changed line, in the repo's template. Cite other code as plain
      repo-relative `path:line` or `path:12-20`: the script checks each one exists at the head commit and turns it into

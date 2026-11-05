@@ -315,7 +315,8 @@ def check_ts(text, wanted, existing):
         member = re.fullmatch(r"(\w+)((?:\??\.\w+)+)", body)
         if call and match_paren(body, call.end() - 1) == len(body) - 1:
             literal = re.compile(r"""^(['"`].*['"`]|-?\d[\d_.]*|true|false|null|undefined)$""")
-            args = {param_name(a) for a in split_top_level(body[call.end() : -1]) if not literal.match(a)}
+            # whole expressions: `n * 100` or `n ?? 0` transforms n, only `n` or `...n` passes it through
+            args = {a.strip().removeprefix("...") for a in split_top_level(body[call.end() : -1]) if not literal.match(a)}
             if args <= names:
                 add(lineno, "wrapper",
                     f"{name} only forwards to {call.group(1)}(); call it directly and delete {name}")

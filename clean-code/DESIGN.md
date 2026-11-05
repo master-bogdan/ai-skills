@@ -40,8 +40,12 @@ Agreed with the owner in November 2026, while reviewing LenderAI/sheets-ui#541 a
 
 - Started by hand. New comments only on lines changed since your last review (base merges excluded), except a traced
   `[MUST FIX]` anywhere. After a force-push, the whole PR, repeating nothing already raised.
-- A thread of yours needs a verdict until you have the last word: unresolved, or resolved by someone else with no
-  reply from you after it. Authors often resolve their own threads (both pilot PRs: all 25 resolved by the author).
+- A thread of yours needs a verdict until it is settled: resolved by you, or resolved by someone else after your
+  last reply settled it ("Fixed …" / "Agreed: …"). Authors often resolve their own threads (both pilot PRs: all 25
+  resolved by the author), sometimes right after a "Still open". An open thread with no known label (hand-written)
+  keeps the recommendation at Comment or above.
+- The draft is pinned to the commit the review read (`head` in the findings file); if the PR moved, nothing is created.
+  More changed files than GitHub's compare lists (300) means a whole-PR re-review, like a force-push.
 - Verdicts: Fixed / Partly fixed / Still open / Accepted, with a drafted reply in the same draft. Pushback that
   doesn't hold is Still open with a counter-reason; "follow-up" counts as Accepted only with a ticket link.
 - Other people's threads are read only to avoid repeats: no verdicts, no replies.
