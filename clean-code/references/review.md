@@ -1,116 +1,125 @@
 # Clean-code review
 
-You are reviewing code someone else (often another agent) wrote. The writer had
-the same rules, and hooks caught the mechanical slips. What gets through to you
-is mostly what needs judgment: reinvention under a different name, drift from the
-project's conventions, premature extraction, and exceptions the writer chose to
-keep. Your fresh attention is the point, so go through every pass below. Don't
-stop at the first few findings.
+You are reviewing code someone else (often another agent) wrote. Your output is a report and, for a PR, a draft
+review on GitHub that only the user sees until they submit it. Don't edit code unless you're asked to.
 
-Don't edit code unless you're asked to. Your output is the report.
+Every finding a human reads must be **verified**: a fresh agent read the cited code at the head commit and failed to
+disprove it. Unverified findings are listed as not posted, never presented as fact.
 
-## 1. Scope
+## 1. Pre-flight
 
-Work out what changed:
+For a PR or branch, check before anything else and name every skip in the report header:
 
-- The user named a base (branch, commit, PR): `git diff <base>...HEAD` plus any
-  uncommitted changes.
-- Otherwise, if there are uncommitted changes, review those (`git diff HEAD`, plus
-  untracked files from `git status`).
-- Otherwise, review the branch against its merge-base with `main`/`master`.
+- `python3` runs.
+- The `code-review` skill is installed (it runs the Standards and Spec axes). If it's missing, stop: "clean-code
+  review needs the `code-review` skill".
+- PR: `gh auth status` succeeds. Without it, review locally from the clone and skip the draft.
+- The ticket is reachable (Jira, GitHub issue or a spec file). Without it, the Spec axis skips.
+- PR: run `python3 <this-skill-dir>/scripts/post_review.py --since <owner/repo> <N>`. If `pending_review` is set, stop:
+  the user already has a draft on this PR and must submit or discard it first (GitHub allows one per person).
 
-List the changed files. Read each changed file whole, not just the hunks, because
-drift and duplication only show up in context.
+Done when each check passed or its skip is named.
 
-If the writer's reply is available, read its "Clean-code check" and "Needs your
-decision" sections. You'll rule on those in step 6.
+## 2. Scope
 
-## 2. Mechanical pass
+- **Base, always explicit.** A PR's base is `base_ref` from `--since`. Otherwise use the base the user named, or ask.
+  Compare from the merge-base (`git diff <base>...HEAD`), never from the base's tip.
+- **PR:** review the code at the PR head in a worktree of the repo's clone, so your own checkout stays untouched.
+- **Re-review** (`last_reviewed_sha` is set): new findings belong on the lines in `changed_since_last_review`, except
+  a traced blocker anywhere. If `force_pushed` is true, review the whole PR. Repeat nothing raised in `open_threads`,
+  `closed_threads` or `other_threads`. Your `open_threads` (unresolved, or resolved by someone else after your last
+  word) get verdicts in step 5. If `summary_missing` is set, tell the user that review went out without its summary.
+- **Uncommitted changes** (reviewing another agent's work): `git diff HEAD` plus untracked files. Skip the sub-agents:
+  run check.py and the clean-code rules, reinvention and correctness briefs yourself, then rule on the writer's "Needs
+  your decision" items (accept with the reason, or reject with what to do instead). Report locally.
+- **Ticket:** find it from the branch name, commits, PR title or body. When it links PRs in other repos, the Spec
+  agent reads them for context.
 
-```bash
-python3 <this-skill-dir>/scripts/check.py --base <base>   # or with no args for uncommitted changes
+Done when you can state base, merge-base, head, changed files, ticket, and mode (first review, re-review, force-pushed).
+
+## 3. Rules: the repo's first, this skill's otherwise
+
+Read the repo's rule files from `origin/<base_ref>` (the rules the PR merges under): `AGENTS.md` / `CLAUDE.md` and the
+files they point to, `.github/copilot-instructions.md`, `.github/instructions/`, `CONTRIBUTING.md`. Copy them into
+`<scratch>/pr<N>-standard/`, keeping their paths.
+
+- **Coding standards.** When the rule files document coding standards, the Standards axis covers conventions. When
+  they document none, also run the conventions brief.
+- **Posting rules** (labels, comment template, limits, status rule) come from the repo's review section, or fall back
+  to the defaults in `scripts/post_review.py`.
+- **Repo docs** (`docs/architecture.md`, `patterns.md`, `models.md`, `how-system-works.md`, ADRs, a glossary) are
+  context for every agent. A finding that rests on a doc is a rule only when a rule file makes it one (for example
+  "a route change updates `docs/system/` in the same PR"); otherwise it's a recommendation, at most `[SUGGESTION]`.
+  When the PR changes something a doc describes and leaves the doc as it was, name the doc and section, and suggest
+  the `generate-repo-docs` skill to refresh it when it's installed.
+- **clean-code's own rules** apply unless the project's `AGENTS.md` / `CLAUDE.md` changes or switches one off.
+  Whether a clean-code finding gets posted depends on the repo's bar (step 5).
+
+Done when you can name the rule files, the posting rules' source (or "defaults"), and whether conventions run.
+
+## 4. Find: sub-agents in parallel
+
+Run `python3 <this-skill-dir>/scripts/check.py --base <base>` in the worktree first; its output goes to the clean-code
+rules agent.
+
+Then spawn every agent in **one message**, each with a fresh context:
+
+| Agent | Brief |
+|---|---|
+| Standards | built per the `code-review` skill (its steps 1–4, smell baseline included), standards from `<scratch>/pr<N>-standard/` |
+| Spec | built per the `code-review` skill, with the ticket text and any linked PRs |
+| Correctness | [agents/correctness.md](agents/correctness.md) |
+| Reinvention | [agents/reinvention.md](agents/reinvention.md) |
+| clean-code rules | [agents/clean-code-rules.md](agents/clean-code-rules.md), plus the check.py output |
+| Conventions | [agents/conventions.md](agents/conventions.md), only when the repo documents no coding standards |
+
+Every prompt carries: the worktree path, the diff command, head SHA, changed files, the standards folder, the repo
+docs list, the ticket, everyone's existing threads (from `--since`), on a re-review the `changed_since_last_review`
+ranges, and the instruction to report in the format of [agents/finding.md](agents/finding.md). For this skill's own
+agents, pass the brief's path and tell the agent to read it first. `code-review`'s own "do not merge" rule covers its
+standalone report; here its findings feed the steps below.
+
+Done when every agent has returned, or you've named the one that failed.
+
+## 5. Verify, then label
+
+Merge findings that share a root cause into one entry and keep every source tag (`Standards`, `Spec`, `Correctness`,
+`Reinvention`, `clean-code`). Then spawn **one verifier per PR** with [agents/verifier.md](agents/verifier.md), the
+merged list, and on a re-review your `open_threads` with their replies. It returns each finding as confirmed, wrong or
+unverified, and gives each thread a verdict and a drafted reply.
+
+Then give every confirmed finding exactly one label from the repo's scale (or the defaults):
+
+- `[MUST FIX]` (or the repo's blocker label) only with a traced failure path: input → steps → wrong result, every hop
+  cited. A suspected blocker with a missing hop is a `[QUESTION]`.
+- **Not posted**, with the reason, when it's: below the repo's bar (its "do not comment on" list); a clean-code rule
+  the repo doesn't hold; already raised in anyone's thread; unverified; over the repo's limit; or, on a re-review, on
+  a line unchanged since your last review.
+- A ticket split across repos: a finding that belongs to both PRs goes on each, covering only that PR's part, marked
+  `shared_with` the other PR.
+
+Re-review thread verdicts (yours only, including comments you wrote by hand; others' threads get none):
+
+| Verdict | When | Reply | Counts toward status |
+|---|---|---|---|
+| `fixed` | the root cause is gone, not just the line moved | "Fixed in `<sha>`." | no |
+| `partly_fixed` | some of it is left | "Partly fixed: what's left, `path:line`" | yes |
+| `open` | no relevant change, or the author's pushback doesn't hold | "Still open: why, `path:line`" | yes |
+| `accepted` | the author's reason holds (checked), or a follow-up links a ticket | "Agreed: why." | no |
+
+Done when every finding has a label or a not-posted reason, and every thread a verdict and a reply.
+
+## 6. Output
+
+**PR:** follow [post-review.md](post-review.md) to create the draft, then show the user the script's output under a
+header line:
+
+```
+Review of owner/repo#N · base origin/dev (merge-base 1a2b3c4) · head 5d6e7f8 · 16 files · first review
+Skipped: Jira (no access)
 ```
 
-Every finding is a **Fix**, unless the writer listed that exact line under "Needs
-your decision". Those go to step 6.
+**Branch or uncommitted changes:** the same content in the terminal: findings grouped by label, each as
+`path:line — what's wrong → fix (sources)`, then the not-posted list, one line each with its reason.
 
-## 3. Reinvention pass
-
-For **every new symbol** (check.py lists them) **and every new file**, search the
-project for something that already does the job. Search by name and by behavior:
-
-```bash
-rg -n "export (const|function|class|type) \w*(Format|Currency|Money)\w*" src
-rg -n "Intl\.NumberFormat|toFixed\(|createObjectURL|setTimeout\(|class \w+Error" src
-```
-
-Also look for reinvention inside function bodies, where no new symbol shows it.
-Typical cases:
-- Formatting money or dates by hand when a formatter exists.
-- A hand-rolled debounce, fetch wrapper, download or CSV routine.
-- Manual `if (!body.x)` validation where the project validates with a schema.
-- A new error class next to existing ones.
-
-A finding is only valid if you name the existing thing and its path:
-`src/x.ts:12 — re-implements currency formatting → use formatCurrency (src/lib/format.ts)`.
-
-## 4. Conventions pass
-
-For each new or substantially changed file, open 1–2 sibling files of the same
-kind (component next to component, service next to service). Compare:
-
-- file naming
-- export style
-- function style (declaration vs arrow)
-- `type` vs `interface`
-- error handling
-- where validation happens
-- layering (router → controller → service → repository)
-- test style
-
-Each divergence the change introduced is a finding. A pattern the project
-doesn't use is drift, even if it's a good pattern.
-
-## 5. Judgment pass
-
-Check each rule from SKILL.md that a regex can't fully see:
-
-- **Wrappers the regex missed:** class methods or multi-line functions that still
-  only forward, or a service method that only calls the repository.
-- **Premature extraction:** a helper used once or twice that isn't a genuinely
-  complex step. Inline it unless the same logic appears 3+ times.
-- **Memoization:** does each `useMemo`/`useCallback`/`React.memo` meet one of
-  the three allowed reasons? Is the reason comment true?
-- **Responsibility:** a function or file mixing jobs (validation + persistence +
-  notification + formatting), or a split into pieces whose names teach nothing.
-- **Speculative code:** factories, options or flags for a single use case.
-- **Readable conditions** and **noise comments**.
-- **Scope:** edits to code the task didn't need.
-
-## 6. Rule on the writer's exceptions
-
-For each item under the writer's "Needs your decision", give a verdict:
-- **Accept:** the reason is concrete and true, so say why.
-- **Reject:** it moves to Fix, with what to do instead.
-
-You advise. The user still decides.
-
-## 7. Report
-
-```
-Fix:
-- path:line — [rule] what's wrong → what to do
-
-Improve:
-- path:line — [rule] what's suboptimal → suggested change
-
-Exceptions:
-- path:line — accept | reject — reason
-```
-
-- **Fix:** breaks a bright line, reinvents something that exists, or drifts from
-  conventions.
-- **Improve:** a real but smaller judgment call.
-- Leave out empty sections. If there's nothing at all, reply "Clean." and
-  nothing else.
-- No praise, no summary of what the code does, no style nits outside these rules.
+No praise and no summary of what the code does. If nothing survived, say "Clean." and stop.

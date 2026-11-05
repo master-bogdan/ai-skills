@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Claude Code hook for the clean-code skill (registered in SKILL.md frontmatter).
 
-PostToolUse (Edit|Write|MultiEdit): checks the lines just changed in that file and
-  sends violations straight back to the agent (exit 2 -> stderr is shown to Claude).
-Stop / SubagentStop: if this session edited code and violations or kept exceptions
-  remain that the agent hasn't been told about yet, blocks the stop once with the list,
-  so the agent fixes them or lists them for the user under "Needs your decision".
+PostToolUse (Edit|Write): checks the lines just changed in that file and sends rule
+  violations straight back to the agent (exit 2 -> stderr is shown to Claude).
+Stop / SubagentStop: if this session edited code and violations, kept exceptions, or
+  same/similar names (definitions, variant names like fooV2, same-named files) remain that
+  the agent hasn't been told about yet, blocks the stop once with the list, so the agent
+  fixes them, lists them for the user under "Needs your decision", or looks at both names.
 
 Sessions that never edited a file (e.g. a reviewer) are never blocked.
 """
@@ -67,20 +68,17 @@ def targets_for(files):
 
 
 def run_checks(files):
-    findings, exceptions, duplicates = [], [], []
+    """Violations, kept exceptions and same/similar-name lines for the given files, per repo."""
+    findings, exceptions, names = [], [], []
     for root, targets in targets_for(files):
         if root:
             os.chdir(root)
-        f, e, symbols = check.collect(targets)
+        f, e, _, symbols = check.collect(targets, "HEAD" if root else None)
         findings += f
         exceptions += e
         if root:
-            for path, name, lineno in symbols:
-                elsewhere = check.find_definitions(name, path)
-                if elsewhere:
-                    where = ", ".join(":".join(l.split(":")[:2]) for l in elsewhere[:3])
-                    duplicates.append(f"{path}:{lineno}  {name} is also defined in {where}; reuse it instead")
-    return findings, exceptions, duplicates
+            names += check.related(symbols, check.added_files("HEAD") & set(targets))
+    return findings, exceptions, names
 
 
 def on_edit(event):
@@ -93,22 +91,19 @@ def on_edit(event):
         state["files"].append(path)
         save_state(session_id, state)
 
-    findings, _, duplicates = run_checks([path])
-    if not findings and not duplicates:
+    findings = []
+    for root, targets in targets_for([path]):  # one file, so targets_for has left us in its repo
+        findings += check.collect(targets, "HEAD" if root else None)[0]
+    if not findings:
         return 0
-    lines = ["clean-code: the edit you just made breaks the skill's rules."]
-    if findings:
-        lines.append(check.format_findings(findings))
-    if duplicates:
-        lines.append("Possible reinvention:\n" + "\n".join(duplicates))
-    lines.append(FIX_OR_FLAG)
+    lines = ["clean-code: the edit you just made breaks the skill's rules.", check.format_findings(findings), FIX_OR_FLAG]
     print("\n".join(lines), file=sys.stderr)
     return 2
 
 
-def already_flagged(message, items, duplicates):
+def already_flagged(message, items):
     """True when the reply already lists every remaining item under 'Needs your decision'."""
-    if "needs your decision" not in message.lower() or duplicates:
+    if "needs your decision" not in message.lower():
         return False
     return all(f"{os.path.basename(path)}:{lineno}" in message for path, lineno, *_ in items)
 
@@ -119,10 +114,13 @@ def on_stop(event):
     if event.get("stop_hook_active") or not state["files"]:
         return 0
 
-    findings, exceptions, duplicates = run_checks(state["files"])
-    keys = [f"{f[0]}:{f[2]}:{f[4]}" for f in findings + exceptions] + duplicates
-    new_keys = [k for k in keys if k not in state["reported"]]
-    if not new_keys or already_flagged(event.get("last_assistant_message") or "", findings + exceptions, duplicates):
+    findings, exceptions, names = run_checks(state["files"])
+    new_names = [n for n in names if n not in state["reported"]]
+    keys = [f"{f[0]}:{f[2]}:{f[4]}" for f in findings + exceptions]
+    new_keys = [k for k in keys if k not in state["reported"]] + new_names
+    if not new_keys:
+        return 0
+    if not new_names and already_flagged(event.get("last_assistant_message") or "", findings + exceptions):
         return 0
     state["reported"] += new_keys
     save_state(session_id, state)
@@ -130,11 +128,12 @@ def on_stop(event):
     parts = ["clean-code check before finishing:"]
     if findings:
         parts.append("Violations in code you changed:\n" + check.format_findings(findings))
-    if duplicates:
-        parts.append("Possible reinvention:\n" + "\n".join(duplicates))
     if exceptions:
         parts.append("Kept exceptions:\n" + check.format_findings(exceptions))
-    parts.append(FIX_OR_FLAG + " Kept exceptions always go under 'Needs your decision'.")
+    if findings or exceptions:
+        parts.append(FIX_OR_FLAG + " Kept exceptions always go under 'Needs your decision'.")
+    if new_names:
+        parts.append(check.LOOK_AT_BOTH + "\n" + "\n".join(new_names))
     print(json.dumps({"decision": "block", "reason": "\n\n".join(parts)}))
     return 0
 

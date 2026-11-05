@@ -1,10 +1,10 @@
 ---
 name: clean-code
-description: Clean, minimal code rules for TypeScript, JavaScript, React, Node.js, and Go — with a required search-before-writing step, plus hooks that check every edit and check again before finishing. Use whenever you write, modify, fix, refactor, or review code in these languages, including small edits and follow-up fixes, even if the user never says "clean code". Stops tiny wrapper functions, premature helper extraction, needless useMemo/useCallback/React.memo, one-line ifs, 4+ parameter functions, reinventing helpers the project already has, and drifting from the project's conventions. Also use it ("/clean-code review") when reviewing another agent's or a PR's changes.
+description: Clean, minimal code rules for TypeScript, JavaScript, React, Node.js, and Go — with a required search-before-writing step, plus hooks that check every edit and check again before finishing. Use whenever you write, modify, fix, refactor, or review code in these languages, including small edits and follow-up fixes, even if the user never says "clean code". Stops tiny wrapper functions, premature helper extraction, needless useMemo/useCallback/React.memo, one-line ifs, 4+ parameter functions, reinventing helpers the project already has, and drifting from the project's conventions. Also use it ("/clean-code review") when reviewing another agent's or a PR's changes, or when drafting a GitHub PR review from review findings.
 allowed-tools: Bash(python3 *clean-code/scripts/check.py*)
 hooks:
   PostToolUse:
-    - matcher: "Edit|Write|MultiEdit"
+    - matcher: "Edit|Write"
       hooks:
         - type: command
           command: python3 "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/clean-code}/scripts/hook.py"
@@ -68,11 +68,14 @@ understand the reason, so you can see the cases the examples don't cover.
 **No tiny wrappers.** Don't create a named function whose whole body is one call
 or one property read with the arguments passed straight through:
 `getName = (u) => u.name`, `fetchUser = (id) => api.get(id)`,
-`formatUsd = (n) => formatCurrency(n, 'USD')`, or a service method that only calls
-the repository. Call the real thing at the call site. *Why:* a wrapper adds a hop
-and a name but no logic, and every reader has to open it to find out it does
-nothing. A function earns its place by holding a decision, a transformation or
-several steps.
+`formatUsd = (n) => formatCurrency(n, 'USD')`. Call the real thing at the call
+site. *Why:* a wrapper adds a hop and a name but no logic, and every reader has to
+open it to find out it does nothing. A function earns its place by holding a
+decision, a transformation or several steps. The one exception is an exported
+function that is the official entry point to another layer or module, like a
+service in front of its repository or a module's public function in front of its
+internals: that hop is the architecture. Forwarding within the same layer is
+still a wrapper.
 
 **No premature extraction.** Extract a block to *dedupe* it only when the same
 logic appears **3 or more times**. Two copies stay inline. You may extract once
@@ -115,6 +118,9 @@ named after the operation (`refundOrder(input: RefundOrderInput)`). In Go, use a
 params struct, not counting a leading `ctx`. Use an object below 3 as well when
 a call site would otherwise pass bare booleans or easily swapped same-type
 values. *Why:* positional argument lists turn every call site into a memory test.
+This binds new functions. When you touch an existing function that already takes
+4+, suggest the object to the user instead of refactoring it unasked. A signature
+a framework dictates, like Express's `(err, req, res, next)`, is exempt.
 
 **Readable conditions.** If a condition has chained `?.`, a callback (`.some`,
 `.find`), a negated non-trivial expression, or runs past about 60 characters,
@@ -136,8 +142,14 @@ never restate the code.
 
 While this skill is active, a hook runs `scripts/check.py` on the lines you just
 changed after every Edit/Write, and once more when you try to finish. It catches
-what a regex can see: one-line ifs, memo hooks without a reason, pass-through
-wrappers, 4+ parameters, and new symbols that already exist elsewhere in the repo.
+what a regex can see: one-line ifs, memo hooks without a reason, private
+pass-through wrappers, and new functions with 4+ parameters.
+
+When you finish, it also lists the names, file names and near-names (`fooV2` for
+`foo`) you introduced that already exist elsewhere in the repo. Open both for
+each: the same thing → import the existing one; clearly different, like each
+file's own private `LOG_PREFIX` → nothing to do; unsure → one line in your report,
+`Potential duplicate: X (also in path)`, so the user decides.
 
 When a hook message appears, treat it as a review comment on the code you just
 wrote:
@@ -165,16 +177,20 @@ Clean-code check:
 - Reused: formatCurrency (src/lib/format.ts), useDebounce (src/hooks/use-debounce.ts)
 - New: OrderSummary component — nothing existing covered it
 - check.py: clean
+- Potential duplicate: ColumnGroup (also in src/common/types/spreadsheet.types.ts)
 
 Needs your decision:
 - src/hooks/use-polling.ts:14 — kept useCallback: it's a useEffect dependency, an
   unstable ref would restart polling every render
 ```
 
-Leave out "Needs your decision" when there is nothing to decide.
+Leave out "Needs your decision" and "Potential duplicate" when there is nothing
+to list.
 
 ## When rules collide
 
+- **The project's own rules win.** A project changes or switches off any rule here
+  in its `AGENTS.md` / `CLAUDE.md` or the standards files they point to.
 - **Bright line vs. a local habit** (for example, the codebase memoizes
   everything): in code you write, the bright line wins. Don't rewrite existing
   code you weren't asked to touch.
@@ -188,8 +204,14 @@ Leave out "Needs your decision" when there is nothing to decide.
 
 When asked to review code (`/clean-code review`, "review this with clean-code",
 reviewing another agent's changes or a PR), read
-[references/review.md](references/review.md) and follow it. The review is where
-the judgment rules get checked properly, so don't shortcut it to a skim.
+[references/review.md](references/review.md) and follow it. For a PR or branch it
+needs the `code-review` skill (Standards and Spec), runs this skill's own
+Correctness, Reinvention and rules agents beside it, has a fresh agent verify
+every finding, and ends a PR review with a GitHub draft that only the user sees.
+Don't shortcut it to a skim.
+
+To turn review findings (from this review or `/code-review`) into a GitHub draft
+review, read [references/post-review.md](references/post-review.md).
 
 ## Language references
 
