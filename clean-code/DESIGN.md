@@ -26,8 +26,8 @@ Agreed with the owner in November 2026, while reviewing LenderAI/sheets-ui#541 a
   callers, late or out-of-order updates): on sheets-ui#545 a confirmed problem's fix caused a new bug. An unsafe or
   unproven fix keeps the label but loses its code suggestion. `post_review.py` checks every cited `path:line` at the
   head commit. Unconfirmed findings are never posted.
-- Agents may run tests: the worktree links the clone's `node_modules` when the lockfiles match, else installs.
-  Throwaway tests stay in the worktree.
+- Agents may run tests on the user's local `node_modules`, linked into the worktree; nothing is installed. A result
+  that depends on a package the PR changes is no evidence. Throwaway tests stay in the worktree.
 - Labels: the repo's, else the owner's PR Review Guide (`[MUST FIX]`, `[QUESTION]`, `[PROPOSAL]`, `[NIT PICK]`,
   `[OPTIONAL]`). A bug `[MUST FIX]` needs a traced failure path with every hop cited, otherwise it is a `[QUESTION]`;
   a boundary or validation `[MUST FIX]` cites the rule and the line. Questions only stored data can answer go in the

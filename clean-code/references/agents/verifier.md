@@ -11,7 +11,8 @@ For each finding:
    documented decision. Check that every quoted rule exists at the cited file:line and says that.
 3. **Bugs:** walk the failure path hop by hop. If a hop can't be completed, the finding is unverified unless you
    complete it. When reading can't settle it, run the nearby tests or a throwaway test in the worktree, and cite the
-   command and result.
+   command and result. Tests run on the user's local packages: a result that depends on a package the PR adds or
+   upgrades is no evidence, so leave that finding unverified and say why.
 4. **The fix:** trace the recommended change the same way. Who else reads or writes that state: other callers, late
    or out-of-order updates (another user's edit, a server echo), the order the server broadcasts in? Mark the fix
    `safe` (say why), `unsafe` (the input that breaks, with `path:line`), or `unproven` (what's missing). A sound

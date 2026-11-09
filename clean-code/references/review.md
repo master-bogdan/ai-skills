@@ -37,10 +37,9 @@ Done when each check passed or its skip is named.
     `git -C <clone> ls-files --others --exclude-standard`.
 
   Check it with `git -C <worktree> rev-parse HEAD` before briefing any agent.
-- **Packages** (JS/TS repos), so agents can run tests: if the worktree's lockfile is identical to the clone's (`cmp`),
-  `ln -s <clone>/node_modules <worktree>/node_modules`; otherwise install from the lockfile in the worktree (`npm ci`,
-  `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`). Name a failure in the report header; the review
-  goes on without tests.
+- **Packages** (JS/TS repos), so agents can run tests: always use the user's local ones,
+  `ln -s <clone>/node_modules <worktree>/node_modules`. Nothing is installed. A test that can't run (a package missing)
+  is named in the report, and the review goes on without it.
 - **Base, always explicit.** A PR's base is `base_ref` from `--since`. A branch's base is the one the user named, else
   the repo's default branch. Compare from the merge-base (`git diff origin/<base>...HEAD`), never from the base's tip.
 - **Re-review** (`last_reviewed_sha` is set): new findings belong on the lines in `changed_since_last_review`, except
