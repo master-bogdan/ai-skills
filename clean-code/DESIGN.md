@@ -8,7 +8,7 @@ Agreed with the owner in November 2026, while reviewing LenderAI/sheets-ui#541 a
 - Works the same in any repo. It uses the repo's own rules first and falls back to its own defaults rule by rule.
   The defaults are the sheets repos' review standard.
 - Repo docs (architecture, patterns, models) are context. A finding based on a doc is a rule only when the repo's
-  rule files say so; otherwise it is a recommendation, `[SUGGESTION]` at most.
+  rule files say so; otherwise it is a recommendation, `[PROPOSAL]` at most.
 - A project changes or switches off a rule in its own `AGENTS.md` / `CLAUDE.md`. The skill names no project.
 - Python is not covered by the coding rules.
 - The sheets repos have their own, separate copies (`sheets-code-standards`, `sheets-pr-review`, `code-review` in the
@@ -17,22 +17,32 @@ Agreed with the owner in November 2026, while reviewing LenderAI/sheets-ui#541 a
 ## Review
 
 - `code-review` (Standards and Spec axes) is a required dependency: it is what makes the Standards and Spec findings
-  accurate. Next to it run Correctness (traced failure paths), Reinvention (search by behaviour and file name), the
-  clean-code rules (`check.py` plus judgement), and Conventions only when the repo documents no standards.
-- One fresh verifier per PR tries to disprove every finding; `post_review.py` checks every cited `path:line` at the
+  accurate. The Standards agent also carries the clean-code checklist and the `check.py` output: two standards agents
+  reported the same breaks twice. Next to it run Correctness (traced failure paths), Reinvention (search by behaviour
+  and file name), and Conventions only when the repo documents no standards.
+- Small changes (a re-review or branch under 150 changed lines) run in the main session plus one verifier: five
+  agents on a 25-line follow-up cost ~430k tokens and four found nothing.
+- One fresh verifier tries to disprove every finding and checks every suggested fix along the same paths (other
+  callers, late or out-of-order updates): on sheets-ui#545 a confirmed problem's fix caused a new bug. An unsafe or
+  unproven fix keeps the label but loses its code suggestion. `post_review.py` checks every cited `path:line` at the
   head commit. Unconfirmed findings are never posted.
-- One label scale from the start: the repo's labels, or "Not posted" with a reason. `[MUST FIX]` needs a traced
-  failure path with every hop cited; otherwise it is a `[QUESTION]`.
+- Agents may run tests: the worktree links the clone's `node_modules` when the lockfiles match, else installs.
+  Throwaway tests stay in the worktree.
+- Labels: the repo's, else the owner's PR Review Guide (`[MUST FIX]`, `[QUESTION]`, `[PROPOSAL]`, `[NIT PICK]`,
+  `[OPTIONAL]`). A bug `[MUST FIX]` needs a traced failure path with every hop cited, otherwise it is a `[QUESTION]`;
+  a boundary or validation `[MUST FIX]` cites the rule and the line. Questions only stored data can answer go in the
+  summary as a note for the data owner.
 - A ticket split across repos: a shared finding goes on each PR, only that PR's part, marked "Shared with".
 
 ## Posting
 
 - The skill creates a GitHub **draft** (pending) review and stops. The human reads, edits, resolves, picks the status
-  and submits. The skill has no path that submits, resolves or deletes.
+  and submits. The skill has no path that submits, resolves or deletes. Local mode (`--local`, or a branch) only
+  reads GitHub.
 - GitHub's Submit review box starts empty for an API-created draft and replaces the draft's summary with its contents.
   A prefilled box is impossible from outside the browser, so the script prints the summary between markers and the
   user pastes it. No clipboard: the user asked for text on screen.
-- Summary format (Copilot-like): status heading (🔴 / 🟡 / 🟢), the verdict, a collapsible "N open issues" list with
+- Summary format (Copilot-like): status heading (🔴 Changes requested / 🟡 Questions open / 🟢 Approved), the verdict, a collapsible "N open issues" list with
   a severity mark per label, then the optional "What changed in this PR" (left out where the repo standard forbids a
   diff summary, as sheets does), then `body`. Each comment opens with its mark and a bold `[LABEL] title`.
 
@@ -48,7 +58,11 @@ Agreed with the owner in November 2026, while reviewing LenderAI/sheets-ui#541 a
   More changed files than GitHub's compare lists (300) means a whole-PR re-review, like a force-push.
 - Verdicts: Fixed / Partly fixed / Still open / Accepted, with a drafted reply in the same draft. Pushback that
   doesn't hold is Still open with a counter-reason; "follow-up" counts as Accepted only with a ticket link.
-- Other people's threads are read only to avoid repeats: no verdicts, no replies.
+- Other people's threads are read to avoid repeats and get no replies. Their unresolved `[MUST FIX]` threads
+  (Copilot's included) get a verdict at the head: one still open keeps the status at Comment or above (on #545 the
+  script said Approve over Copilot's open blocker).
+- `[WON'T FIX] <reason>` on a `[PROPOSAL]` / `[NIT PICK]` counts as agreed; one ignored is listed as skipped and
+  doesn't block. `[OPTIONAL]` needs no reply.
 
 ## check.py
 

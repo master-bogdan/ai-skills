@@ -206,9 +206,10 @@ When asked to review code (`/clean-code review`, "review this with clean-code",
 reviewing another agent's changes or a PR), read
 [references/review.md](references/review.md) and follow it. For a PR or branch it
 needs the `code-review` skill (Standards and Spec), runs this skill's own
-Correctness, Reinvention and rules agents beside it, has a fresh agent verify
-every finding, and ends a PR review with a GitHub draft that only the user sees.
-Don't shortcut it to a skim.
+Correctness and Reinvention agents beside it, has a fresh agent verify every
+finding and its fix, and ends a PR review with a GitHub draft that only the user
+sees. A local review (`--local`, "locally", or a branch) shows the same report in
+the terminal and writes nothing to GitHub. Don't shortcut it to a skim.
 
 To turn review findings (from this review or `/code-review`) into a GitHub draft
 review, read [references/post-review.md](references/post-review.md).

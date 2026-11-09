@@ -24,5 +24,12 @@ For each candidate, **trace** the failure path through the real code: a concrete
 `path:line`, the wrong result. A path you can't complete is still worth reporting with `Confidence: unsure` and the
 missing hop named. Skip an issue already raised in the existing threads unless you have new evidence; then say so.
 
+When reading can't settle a candidate, **run it**: the existing tests near the code (the repo's runner in the worktree:
+`npx vitest run <file>`, `npx jest <file>`, `go test ./<pkg>/`), or a throwaway test you write in the worktree that reproduces the input. Report the command and its result
+as evidence. Throwaway tests stay in the worktree; never in the user's checkout.
+
+For each fix you propose, trace it like the bug: who else reads or writes that state (other callers, late or
+out-of-order updates, other users' edits), and say why the fix keeps them correct.
+
 Report in the format of [finding.md](finding.md). Done when every changed function was read with its callers, and
 every candidate is traced, reported as unsure with its missing hop, or discarded.

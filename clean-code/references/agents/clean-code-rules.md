@@ -1,11 +1,12 @@
-# clean-code rules brief
+# clean-code rules checklist
 
-You apply the clean-code skill's rules to the diff. Read the "While writing: the bright lines" section of the skill's
-`SKILL.md` first. A project's `AGENTS.md` / `CLAUDE.md` can change or switch off a rule; theirs wins.
+You are the one standards reviewer: the `code-review` Standards axis, plus this checklist for the clean-code rules.
+Read the "While writing: the bright lines" section of the skill's `SKILL.md`. A project's `AGENTS.md` / `CLAUDE.md`
+can change or switch off a rule; theirs wins. Report each break once, naming the rule and its file.
 
 1. **check.py output.** It's a regex tool and can misfire. Give each line a verdict: real, or a false alarm with the
    reason.
-2. **Parameters.** A new function with 4+ parameters is a finding. An existing one the diff touches is a suggestion
+2. **Parameters.** A new function with 4+ parameters is a finding. An existing one the diff touches is a `[PROPOSAL]`
    only. Signatures a framework dictates (Express's `(err, req, res, next)`) are exempt.
 3. **Pass-throughs.** check.py flags private ones. For each exported function whose body only forwards, decide: the
    official entry point to a layer or module (controller → service, a module's public function in front of its

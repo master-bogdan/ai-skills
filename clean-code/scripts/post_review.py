@@ -6,6 +6,7 @@ Usage:
                                                      last review and the lines changed since, everyone's threads
   python3 post_review.py <findings.json>             dry run: check everything and print the review, create nothing
   python3 post_review.py <findings.json> --draft     create the draft; only you see it until you submit it in GitHub
+  python3 post_review.py <findings.json> --local     the same checks as the dry run, for a review that is never posted
 
 Input:
   {"repo": "owner/name", "pr": 123, "head": "head_sha from --since: the commit the review read",
@@ -13,17 +14,20 @@ Input:
    "body": "optional: only what has no line (a question, a cross-cutting note)",
    "standard": {                                                   only what the repo's base branch states
      "source": "origin/dev:.github/copilot-instructions.md",       required: where the rules were read, or "none"
-     "labels": ["[MUST FIX]", "[SUGGESTION]", "..."],             the repo's labels, most severe first
+     "labels": ["[MUST FIX]", "[QUESTION]", "[PROPOSAL]", "..."],  the repo's labels, most severe first
      "request_changes": ["[MUST FIX]"],                           labels that make the review REQUEST_CHANGES
      "comment": ["[QUESTION]"],                                   labels that make it COMMENT; neither -> APPROVE
-     "limits": {"[SUGGESTION]": 3, "[OPTIONAL]+[NIT PICK]": 1},   already picked for this PR's size
-     "max_chars": 600},                                           per comment, suggestion and AI fix prompt excluded
+     "no_reply": ["[OPTIONAL]"],                                  labels the author may skip without a reply
+     "limits": {"[PROPOSAL]": 3, "[OPTIONAL]+[NIT PICK]": 1},     already picked for this PR's size
+     "max_chars": 600},                                           per comment; suggestion, AI fix prompt, links and
+                                                                  cited path:line excluded
    "findings": [{"label": "[MUST FIX]", "title": "...", "path": "src/x.ts", "line": 41, "start_line": 37,
                  "why": "...", "evidence": "src/y.ts:12-20 ...", "fix": "...", "ai_prompt": "optional",
                  "shared_with": "optional owner/name#45: the other PR of a ticket split across repos",
                  "body": "optional: the whole comment, written to the repo's own template, instead of why/evidence/fix",
                  "suggestion": "optional code"}],
    "previous": [{"comment_id": 123, "status": "fixed" | "partly_fixed" | "open" | "accepted", "note": "the reply"}],
+   "others": [{"comment_id": 456, "status": "open" | "fixed" | "wrong", "note": "why, with path:line"}],
    "not_posted": [{"title": "...", "reason": "...", "evidence": "optional src/z.ts:8"}],
    "changes": ["optional: 3-5 plain lines for a collapsed 'What changed in this PR' section"]}
 
@@ -32,15 +36,22 @@ the label-based rules (request_changes, comment, limits) are not filled in when 
 dry run says which rules came from the defaults.
 
 Citations: every `path:line` or `path:12-20` in a comment's text must exist at the head commit; the script turns each
-into a link pinned to that commit. A file name without its folder is rejected. Links don't count toward max_chars.
+into a link pinned to that commit. A file name without its folder is rejected. Links and citations don't count toward
+max_chars.
 
 Head: the draft is attached to `head`. If the PR has moved since, nothing is created: review the new commits first.
 
-Re-review: `previous` must list every thread in `open_threads` from --since, each with a verdict. A thread of yours is
+Re-review: `previous` must list every thread in `open_threads` from --since, each with a verdict, except threads
+labelled `no_reply` (they need no answer; give one only when it was fixed). A thread of yours is
 open until it is settled: resolved by you, or resolved by someone else after your last reply settled it ("Fixed …" or
 "Agreed: …"). Authors often resolve their own threads, including after a "Still open" reply. `closed_threads` (yours, settled) and `other_threads` are read only to avoid repeats.
 Replies go into the draft (a fixed one defaults to "Fixed in <head>."); open and partly fixed threads count toward
-the status. New findings must sit on lines changed since your last review, unless their label requests changes.
+the status. An open thread with a label that doesn't block is listed as skipped without a reply. New findings must
+sit on lines changed since your last review, unless their label requests changes.
+
+Other reviewers: `others` must list every unresolved thread of someone else's (Copilot's included) whose label requests
+changes, with the verifier's verdict at the head commit. They get no reply. One still `open` keeps the status at
+COMMENT or above and is listed in the summary.
 
 The script checks every anchor against the PR diff (new side), every citation, and the limits; it derives the
 recommended status, and fails with every problem listed instead of trimming anything. With --draft it creates the
@@ -63,22 +74,25 @@ HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 NOT_COUNTED = re.compile(r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum|[^/]+\.lock)$"
                          r"|(^|/)(__snapshots__|__fixtures__|fixtures)/|\.snap$")
 STATUS_NAMES = {"REQUEST_CHANGES": "Request changes", "COMMENT": "Comment", "APPROVE": "Approve"}
-STATUS_HEADINGS = {"REQUEST_CHANGES": "🔴 Changes requested", "COMMENT": "🟡 Changes recommended", "APPROVE": "🟢 Approved"}
-LABEL_MARKS = {"[MUST FIX]": "🔴", "[QUESTION]": "🟠", "[SUGGESTION]": "🟡", "[OPTIONAL]": "🔵", "[NIT PICK]": "⚪"}
+STATUS_HEADINGS = {"REQUEST_CHANGES": "🔴 Changes requested", "COMMENT": "🟡 Questions open", "APPROVE": "🟢 Approved"}
+LABEL_MARKS = {"[MUST FIX]": "🔴", "[QUESTION]": "🟠", "[PROPOSAL]": "🟡", "[NIT PICK]": "⚪", "[OPTIONAL]": "🔵"}
 VERDICTS = {"fixed": "Fixed", "partly_fixed": "Partly fixed", "open": "Still open", "accepted": "Accepted"}
+OTHERS_VERDICTS = ("open", "fixed", "wrong")
+SKIPPED = "Skipped without [WON'T FIX]"
 SETTLING_REPLIES = ("fixed", "agreed")  # how the replies that close a thread open (references/review.md step 5)
 DEFAULT_STANDARD = {
-    "labels": ["[MUST FIX]", "[SUGGESTION]", "[QUESTION]", "[OPTIONAL]", "[NIT PICK]"],
+    "labels": ["[MUST FIX]", "[QUESTION]", "[PROPOSAL]", "[NIT PICK]", "[OPTIONAL]"],  # the PR Review Guide's labels
     "request_changes": ["[MUST FIX]"],
     "comment": ["[QUESTION]"],
+    "no_reply": ["[OPTIONAL]"],
     "max_chars": 600,
 }
 DEFAULT_LIMITS = [  # (most counted files, limits): the tiers of the sheets repos' review standard
-    (15, {"[SUGGESTION]": 3, "[QUESTION]": 2, "[OPTIONAL]+[NIT PICK]": 1}),
-    (40, {"[SUGGESTION]": 8, "[QUESTION]": 4, "[OPTIONAL]+[NIT PICK]": 3}),
-    (None, {"[SUGGESTION]": 12, "[QUESTION]": 6, "[OPTIONAL]+[NIT PICK]": 4}),
+    (15, {"[PROPOSAL]": 3, "[QUESTION]": 2, "[OPTIONAL]+[NIT PICK]": 1}),
+    (40, {"[PROPOSAL]": 8, "[QUESTION]": 4, "[OPTIONAL]+[NIT PICK]": 3}),
+    (None, {"[PROPOSAL]": 12, "[QUESTION]": 6, "[OPTIONAL]+[NIT PICK]": 4}),
 ]
-LABEL_RULES = ("request_changes", "comment", "limits")
+LABEL_RULES = ("request_changes", "comment", "no_reply", "limits")
 COMPARE_FILE_CAP = 300  # GitHub's compare API lists at most this many changed files
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -238,7 +252,10 @@ def load_previous(repo, pr, head, diff):
             "whole_pr": whole_pr, "changed_since": since,
             "open_threads": [t for t in mine if awaits_verdict(t, me)],
             "closed_threads": [t for t in mine if not awaits_verdict(t, me)],
-            "other_threads": [t for t in threads if t["author"] != me]}
+            "other_threads": [t for t in threads if t["author"] != me],
+            "others_blocking": [t["comment_id"] for t in threads
+                                if t["author"] != me and not t["resolved"] and not t["pending"]
+                                and t["label"] in DEFAULT_STANDARD["request_changes"]]}
 
 
 def file_size(repo, head, path):
@@ -289,8 +306,10 @@ def render(spec, finding):
         mark = f"{LABEL_MARKS[label]} " if label in LABEL_MARKS else ""
         parts = [f"{mark}**{f'{label} ' if label else ''}{finding['title']}**", "", f"Why it matters: {finding['why']}",
                  f"Evidence: {finding['evidence']}", f"Recommended change: {finding['fix']}"]
-    text = pin_citations(spec, "\n".join(parts))
-    counted = len(MARKDOWN_LINK.sub(r"\1", SUGGESTION_BLOCK.sub("", text)))
+    raw = "\n".join(parts)
+    text = pin_citations(spec, raw)
+    visible = CITATION.sub(lambda match: match.group(0) if match.group("link") else "", SUGGESTION_BLOCK.sub("", raw))
+    counted = len(MARKDOWN_LINK.sub(r"\1", visible))
     parts = [text]
     if finding.get("suggestion"):
         parts += ["", "```suggestion", finding["suggestion"].rstrip("\n"), "```"]
@@ -345,7 +364,8 @@ def check_findings(spec, diff, since):
             problems += citation_problems(spec, f"{where} {key}", finding.get(key))
         length = render(spec, finding)[1]
         if max_chars and length > max_chars:
-            problems.append(f"{where}: {length} characters, limit {max_chars} (suggestion and AI fix prompt excluded)")
+            problems.append(f"{where}: {length} characters, limit {max_chars} "
+                            "(suggestion, AI fix prompt, links and cited path:line excluded)")
         counts[finding.get("label", "")] = counts.get(finding.get("label", ""), 0) + 1
     for key, limit in standard.get("limits", {}).items():
         count = sum(counts.get(label, 0) for label in key.split("+"))
@@ -363,6 +383,7 @@ def check_findings(spec, diff, since):
 def check_previous(spec, threads):
     problems = []
     known = {t["comment_id"] for t in threads}
+    optional = set(spec["standard"].get("no_reply", []))
     given = {item.get("comment_id") for item in spec.get("previous", [])}
     for item in spec.get("previous", []):
         if item.get("comment_id") not in known:
@@ -371,10 +392,41 @@ def check_previous(spec, threads):
             problems.append(f"previous {item['comment_id']}: status must be one of {', '.join(VERDICTS)}")
         elif item["status"] != "fixed" and not (item.get("note") or "").strip():
             problems.append(f"previous {item['comment_id']}: a {item['status']} thread needs a note (the reply)")
-    missing = [f"{t['comment_id']} ({t['label']} {t['title']})" for t in threads if t["comment_id"] not in given]
+    missing = [f"{t['comment_id']} ({t['label']} {t['title']})" for t in threads
+               if t["comment_id"] not in given and t["label"] not in optional]
     if missing:
         problems.append("open threads not accounted for in previous (give each a verdict): " + "; ".join(missing))
     return problems
+
+
+def blocking_others(standard, others):
+    """Other reviewers' unresolved threads whose label requests changes."""
+    return [t for t in others if not t["resolved"] and not t["pending"]
+            and t["label"] in standard.get("request_changes", [])]
+
+
+def check_others(spec, others):
+    problems = []
+    required = {t["comment_id"]: t for t in blocking_others(spec["standard"], others)}
+    given = {item.get("comment_id") for item in spec.get("others", [])}
+    for item in spec.get("others", []):
+        if item.get("comment_id") not in required:
+            problems.append(f"others {item.get('comment_id')}: not an unresolved blocking thread of another reviewer")
+        elif item.get("status") not in OTHERS_VERDICTS:
+            problems.append(f"others {item['comment_id']}: status must be one of {', '.join(OTHERS_VERDICTS)}")
+        elif not (item.get("note") or "").strip():
+            problems.append(f"others {item['comment_id']}: needs a note (why, with path:line)")
+    missing = [f"{t['comment_id']} ({t['author']}: {t['label']} {t['title']})" for key, t in required.items()
+               if key not in given]
+    if missing:
+        problems.append("other reviewers' blocking threads not checked in others (give each a verdict): "
+                        + "; ".join(missing))
+    return problems
+
+
+def others_open(spec, others):
+    verdicts = {item["comment_id"]: item["status"] for item in spec.get("others", [])}
+    return [t for t in others if verdicts.get(t["comment_id"]) == "open"]
 
 
 def status(standard, labels):
@@ -398,13 +450,29 @@ def severity(spec, label):
 
 
 def still_open(spec, threads):
-    """(thread, verdict) for every thread that still counts toward the status."""
+    """(thread, verdict) for every thread of yours that isn't settled, leaving out the ones that need no reply."""
     verdicts = {item["comment_id"]: item["status"] for item in spec.get("previous", [])}
+    optional = set(spec["standard"].get("no_reply", []))
     return [(t, verdicts[t["comment_id"]]) for t in threads
-            if verdicts.get(t["comment_id"]) in ("open", "partly_fixed")]
+            if verdicts.get(t["comment_id"]) in ("open", "partly_fixed") and t["label"] not in optional]
 
 
-def review_body(spec, threads, links):
+def thread_tag(standard, thread, verdict):
+    blocking = set(standard.get("request_changes", [])) | set(standard.get("comment", []))
+    known = thread["label"] in (standard.get("labels") or [])
+    return SKIPPED if verdict == "open" and known and thread["label"] not in blocking else VERDICTS[verdict]
+
+
+def issue_list(spec, rows, heading):
+    ranked = sorted(rows, key=lambda row: severity(spec, row[0]))
+    lines = []
+    for label, title, link, tag in ranked:
+        badge = f"{LABEL_MARKS.get(label, '•')} `{label.strip('[]')}` " if label else ""
+        lines.append(f"- {badge}[{title}]({link}) · {tag}")
+    return ["", "<details open>", f"<summary>{heading}</summary>", "", *lines, "", "</details>"]
+
+
+def review_body(spec, threads, links, others=()):
     """links: one per finding, to its inline comment once created (to its code line before that)."""
     parts = [f"### {STATUS_HEADINGS[spec['event']]}", "", spec["verdict"].strip()]
     previous = spec.get("previous", [])
@@ -413,15 +481,13 @@ def review_body(spec, threads, links):
         since = ", ".join(f"{count} {word}" for count, word in counts if count)
         parts += ["", f"Since {spec['last_reviewed_sha'][:7]}: {since}, {len(spec.get('findings', []))} new."]
     rows = [(f.get("label", ""), f["title"], link, "New") for f, link in zip(spec.get("findings", []), links)]
-    rows += [(t["label"], t["title"], t["url"], VERDICTS[verdict]) for t, verdict in still_open(spec, threads)]
+    rows += [(t["label"], t["title"], t["url"], thread_tag(spec["standard"], t, verdict))
+             for t, verdict in still_open(spec, threads)]
     if rows:
-        ranked = sorted(rows, key=lambda row: severity(spec, row[0]))
-        lines = []
-        for label, title, link, tag in ranked:
-            badge = f"{LABEL_MARKS.get(label, '•')} `{label.strip('[]')}` " if label else ""
-            lines.append(f"- {badge}[{title}]({link}) · {tag}")
-        parts += ["", "<details open>", f"<summary>{len(rows)} open issue{'s' if len(rows) > 1 else ''}</summary>",
-                  "", *lines, "", "</details>"]
+        parts += issue_list(spec, rows, f"{len(rows)} open issue{'s' if len(rows) > 1 else ''}")
+    theirs = [(t["label"], t["title"], t["url"], t["author"]) for t in others_open(spec, others)]
+    if theirs:
+        parts += issue_list(spec, theirs, f"Still open from others ({len(theirs)})")
     if spec.get("changes"):
         parts += ["", "<details>", "<summary>What changed in this PR</summary>", "",
                   *[f"- {change}" for change in spec["changes"]], "", "</details>"]
@@ -430,7 +496,7 @@ def review_body(spec, threads, links):
     return "\n".join(parts)
 
 
-def payload(spec, threads):
+def payload(spec, threads, others=()):
     comments = []
     for finding in spec.get("findings", []):
         comment = {"path": finding["path"], "line": finding["line"], "side": "RIGHT", "body": render(spec, finding)[0]}
@@ -439,11 +505,13 @@ def payload(spec, threads):
         comments.append(comment)
     labels = {f.get("label", "") for f in spec.get("findings", [])} | {t["label"] for t, _ in still_open(spec, threads)}
     spec["event"] = status(spec["standard"], labels)
+    if spec["event"] == "APPROVE" and others_open(spec, others):
+        spec["event"] = "COMMENT"  # another reviewer's confirmed blocker is still open
     links = [code_link(spec, f) for f in spec.get("findings", [])]
-    return {"commit_id": spec["head"], "body": review_body(spec, threads, links), "comments": comments}
+    return {"commit_id": spec["head"], "body": review_body(spec, threads, links, others), "comments": comments}
 
 
-def link_comments(spec, posted, threads):
+def link_comments(spec, posted, threads, others):
     """Point the issue list at the draft's inline comments instead of code lines. Returns the new summary, or None when
     the comments can't be matched."""
     base = f"repos/{spec['repo']}/pulls/{spec['pr']}/reviews/{posted['id']}"
@@ -453,7 +521,7 @@ def link_comments(spec, posted, threads):
         links = [by_body.get(render(spec, finding)[0]) for finding in spec.get("findings", [])]
         if None in links:
             return None
-        body = review_body(spec, threads, links)
+        body = review_body(spec, threads, links, others)
         gh("api", base, "--method", "PUT", "-f", f"body={body}")
     except (subprocess.CalledProcessError, ValueError):
         return None
@@ -468,7 +536,7 @@ def add_replies(spec, posted, threads):
            "-f", f"thread={by_id[item['comment_id']]['thread_id']}", "-f", f"body={note}")
 
 
-def print_summary(spec, event, threads):
+def print_summary(spec, event, threads, others):
     standard = spec["standard"]
     defaulted = f"; defaults used for {', '.join(spec['defaulted'])}" if spec["defaulted"] else ""
     print(f"Recommended status: {STATUS_NAMES[event]} (rules from {standard['source']}{defaulted})")
@@ -485,6 +553,12 @@ def print_summary(spec, event, threads):
             reopen = (f" (resolved by {thread['resolved_by']}: unresolve it in GitHub to keep it open)"
                       if thread.get("resolved") and item["status"] in ("open", "partly_fixed") else "")
             print(f"  {VERDICTS[item['status']]:<13}{thread['label']} {thread['title']} → {note}{reopen}")
+    if spec.get("others"):
+        by_id = {t["comment_id"]: t for t in others}
+        print("\nOther reviewers' blocking threads (no reply is posted):")
+        for item in spec["others"]:
+            thread = by_id[item["comment_id"]]
+            print(f"  {item['status']:<6}{thread['author']}: {thread['label']} {thread['title']} → {item['note']}")
     if spec.get("not_posted"):
         print(f"\nNot posted ({len(spec['not_posted'])}):")
         for item in spec["not_posted"]:
@@ -501,9 +575,14 @@ def main(argv):
                           "changed_files": sorted(diff), "counted_files": counted_files(diff),
                           "changed_since_last_review": None if since is None else {
                               path: to_ranges(lines) for path, lines in sorted(since.items())},
+                          "changed_lines_since_last_review": None if since is None else sum(map(len, since.values())),
                           **previous}, indent=2, ensure_ascii=False))
         return 0
-    args = [a for a in argv[1:] if a != "--draft"]
+    local = "--local" in argv
+    if local and "--draft" in argv:
+        print("--local never posts: pick --local or --draft.", file=sys.stderr)
+        return 2
+    args = [a for a in argv[1:] if a not in ("--draft", "--local")]
     if len(args) != 1 or args[0].startswith("--"):
         print(__doc__.strip())
         return 2
@@ -530,19 +609,21 @@ def main(argv):
     for finding in spec.get("findings", []):
         if finding.get("shared_with") and finding.get("title"):
             finding["title"] = f"Shared with {finding['shared_with']}: {finding['title']}"
-    threads = previous["open_threads"]
-    problems = check_findings(spec, diff, previous["changed_since"]) + check_previous(spec, threads)
-    if previous["pending_review"]:
+    threads, others = previous["open_threads"], previous["other_threads"]
+    problems = (check_findings(spec, diff, previous["changed_since"]) + check_previous(spec, threads)
+                + check_others(spec, others))
+    if previous["pending_review"] and not local:
         problems.insert(0, f"you already have a draft review on this PR ({previous['pending_review']}); "
                            "submit or discard it in GitHub first")
     if problems:
         print("Not created:\n" + "\n".join(f"  - {p}" for p in problems), file=sys.stderr)
         return 1
-    review = payload(spec, threads)
+    review = payload(spec, threads, others)
     event = spec["event"]
     if "--draft" not in argv:
-        print("Dry run: nothing created. Rerun with --draft to create the draft review.\n")
-        print_summary(spec, event, threads)
+        print("Local review: nothing is posted.\n" if local else
+              "Dry run: nothing created. Rerun with --draft to create the draft review.\n")
+        print_summary(spec, event, threads, others)
         print("\n--- Review summary ---\n" + review["body"])
         for comment in review["comments"]:
             print(f"\n--- {comment['path']}:{comment['line']} ---\n{comment['body']}")
@@ -555,12 +636,12 @@ def main(argv):
         add_replies(spec, posted, threads)
     except subprocess.CalledProcessError as error:
         print(f"The draft exists, but adding the replies failed, so some are missing from it: {error.stderr.strip()}")
-    summary = link_comments(spec, posted, threads) if review["comments"] else review["body"]
+    summary = link_comments(spec, posted, threads, others) if review["comments"] else review["body"]
     if summary is None:
         summary = review["body"]
         print("Note: the summary's issue list still links to code lines (could not match the draft's comments).")
     print(f"Draft review created; only you can see it until you submit: {posted.get('html_url')}\n")
-    print_summary(spec, event, threads)
+    print_summary(spec, event, threads, others)
     # GitHub's submit box starts empty and replaces the draft's summary with its contents, so the user pastes it.
     print("\nIn GitHub: Files changed → read each comment, edit or delete it (and its line in the summary), resolve "
           "the threads you agree are done → Submit review → paste the summary below into the empty box (GitHub doesn't "
