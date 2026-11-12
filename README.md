@@ -7,22 +7,13 @@ into `~/.claude/skills/`.
 
 | Skill | Description |
 |-------|-------------|
-| [caveman](caveman/) | Ultra-compressed communication mode |
-| [clean-code](clean-code/) | Write and review clean code for React, Node.js, Go, TypeScript |
-| [code-standards](code-standards/) | TypeScript/React/Redux/Node code standards |
-| [composition-patterns](composition-patterns/) | React composition patterns |
-| [grill-me](grill-me/) | Relentless design/plan interviewer |
-| [grill-me-with-docs](grill-me-with-docs/) | Grill-me with ADR and CONTEXT output |
-| [handoff](handoff/) | Compact conversation into handoff doc |
-| [improve-codebase-architecture](improve-codebase-architecture/) | Find architecture improvement opportunities |
-| [react-best-practices](react-best-practices/) | React/Next.js performance patterns |
-| [react-native-skills](react-native-skills/) | React Native performance and patterns |
-| [repo-docs-generator](repo-docs-generator/) | Generate/update repo docs |
-| [tdd](tdd/) | Test-driven development red-green-refactor |
-| [to-prd](to-prd/) | Turn conversation into a PRD GitHub issue |
-| [web-design-guidelines](web-design-guidelines/) | UI/accessibility review |
-| [write-a-skill](write-a-skill/) | Create new agent skills |
-| [zoom-out](zoom-out/) | Step back and reframe the problem |
+| [clean-code](clean-code/) | Write and review clean code for React, Node.js, Go, TypeScript; verified PR reviews as GitHub drafts or local reports |
+| [composition-patterns](composition-patterns/) | React composition patterns (Vercel) |
+| [generate-repo-docs](generate-repo-docs/) | Generate/update repo docs: AGENTS.md, CLAUDE.md, copilot-instructions, docs/*.md |
+| [generate-swagger-docs](generate-swagger-docs/) | Add swagger-ui and generate an OpenAPI spec and model schemas |
+| [react-best-practices](react-best-practices/) | React/Next.js performance patterns (Vercel) |
+| [react-native-skills](react-native-skills/) | React Native performance and patterns (Vercel) |
+| [twelve-factor-app](twelve-factor-app/) | Audit a repo for 12-factor compliance |
 
 ## Setup
 
