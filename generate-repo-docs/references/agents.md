@@ -13,6 +13,7 @@
 - `Working Rules`
 - `Verification`
 - `Change Safety`
+- `Code review`
 - `Additional Repo Docs`
 - `Needs Confirmation`
 
@@ -116,6 +117,29 @@ Include rules such as:
 - update related docs when behavior changes
 - verify references after renames
 - do not invent facts
+
+### `Code review`
+
+How any agent reviews a PR here. Write it close to this, with the repo's own `owner/repo` and base branch:
+
+```markdown
+When reviewing a PR or diff in this repo, apply `.github/copilot-instructions.md` as the review standard, whatever
+tool you are (Copilot, Claude, Codex, or another agent). Its "Review output" block decides what gets posted; findings
+below its bar stay in your local report.
+
+When you review locally (rather than as a CI reviewer, which only posts comments):
+
+- Review from a worktree of the local clone: `git -C <clone> fetch origin <base>` (so the diff and the rules use the
+  current base), then `git -C <clone> fetch origin pull/<N>/head` and
+  `git -C <clone> worktree add <scratch>/pr<N> FETCH_HEAD`. Keep a subagent's reads and writes inside that path, and
+  remove the worktree when done.
+- Read the PR's existing review threads first (`gh api repos/<owner>/<repo>/pulls/<N>/comments`).
+- Trace a bug `[MUST FIX]` through every hop of the failure path and cite each one; with any hop untraced, post it as
+  a `[QUESTION]`. A boundary or validation `[MUST FIX]` cites the rule it breaks and the line.
+- Post once, as one review with inline comments. A submitted review's status can't be changed, so set it from the
+  labels on the first post: any `[MUST FIX]` → `REQUEST_CHANGES`; otherwise any `[QUESTION]` → `COMMENT`; otherwise
+  `APPROVE`.
+```
 
 ### `Additional Repo Docs`
 
