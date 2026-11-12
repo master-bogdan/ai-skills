@@ -9,13 +9,12 @@ Both AI agents and humans — but especially AI agents. A well-written CONTEXT.m
 lets agents use the same vocabulary as the team, which makes suggestions and
 docs more precise and less generic.
 
-## When to generate
+## When to generate or update
 
-- Create if no `CONTEXT.md` exists and the repo has meaningful domain concepts
-- Skip or mark `Needs confirmation` if the repo is a utility library, toolchain,
-  or infrastructure project with no business domain language
-- If multiple bounded contexts exist, create `CONTEXT-MAP.md` at root plus
-  individual `CONTEXT.md` files per context
+- **Create** if no `CONTEXT.md` exists and the repo has meaningful domain concepts
+- **Update** if `CONTEXT.md` exists — add missing terms found in the codebase, never remove or overwrite existing entries. Existing terms may reflect manual curation or resolved ambiguities that can't be reconstructed from code.
+- **Skip** and mark `Needs confirmation` if the repo is a utility library, toolchain, or infrastructure project with no business domain language
+- If multiple bounded contexts exist, create `CONTEXT-MAP.md` at root plus individual `CONTEXT.md` files per context
 
 ## How to populate
 

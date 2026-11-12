@@ -92,16 +92,17 @@ Do not write `docs/*.md` files in the same dry style as `AGENTS.md`. A human sho
 
 ## Decision Rules
 
-After inspection, decide actions yourself for the full canonical set on every invocation:
+Every canonical doc must be created or updated on every invocation — no exceptions. `skip` is not allowed for canonical docs.
+
+After inspection, decide the action for each canonical doc:
 
 - `create` when a canonical doc is missing
 - `update` when a canonical doc exists and mostly fits but needs improvement
 - `rewrite` when a canonical doc exists but is too stale, too thin, or off-contract
 - `rename` when a legacy file matches an allowed mapping
 - `preserve` when a non-canonical doc should remain as an additional repo doc
-- `skip` when an existing doc is already good enough
 
-Do not ask the user to choose between `create` and `update`.
+Do not ask the user to choose between `create`, `update`, and `rewrite`.
 The skill must infer the right action from the repo state and then show it in the plan.
 
 If the user asks for one specific doc, still audit the full canonical set. Keep
