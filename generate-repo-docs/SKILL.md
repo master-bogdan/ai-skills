@@ -187,14 +187,10 @@ Always include real task-routing guidance such as:
 
 ## Copilot instructions expectations
 
-`.github/copilot-instructions.md` is review-focused, not a copy of `AGENTS.md`.
-
-It should:
-
-- reduce review noise
-- focus on actionable findings
-- define review labels and comment structure
-- include AI fix prompts in each review comment template
+`.github/copilot-instructions.md` is review-focused, not a copy of `AGENTS.md`: repo-specific checks with a label
+on each, then the standard "Review output" block copied verbatim from
+[references/copilot-instructions.md](references/copilot-instructions.md). Labels and the status rule follow the PR
+Review Guide (`[MUST FIX]`, `[QUESTION]`, `[PROPOSAL]`, `[NIT PICK]`, `[OPTIONAL]`).
 
 ## Write safety
 

@@ -43,6 +43,8 @@ openDialog(true, false);
 // GOOD
 const availableItems = getItems();
 const hasItems = availableItems.length > 0;
-if (retryCount >= ORDER_LIMITS.MAX_RETRIES) { throw new RetryLimitError(); }
+if (retryCount >= ORDER_LIMITS.MAX_RETRIES) {
+  throw new RetryLimitError();
+}
 openDialog({ isEditable: true, showHistory: false });
 ```

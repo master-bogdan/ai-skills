@@ -55,7 +55,9 @@ export const createOrder = async (req: Request, res: Response) => {
 // Service — business logic
 export const create = async (input: CreateOrderInput, userId: string): Promise<Order> => {
   const user = await userRepository.findById(userId);
-  if (!user.canCreateOrders) throw new ForbiddenError();
+  if (!user.canCreateOrders) {
+    throw new ForbiddenError();
+  }
 
   const total = calculateTotal(input.items);
   return orderRepository.create({ ...input, userId, total });

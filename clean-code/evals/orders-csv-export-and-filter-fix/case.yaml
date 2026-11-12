@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: orders-csv-export-and-filter-fix
+expected_outcome: |
+  Export button added using the existing downloadFile, formatCurrency and formatDate helpers, the Active filter fixed to exclude cancelled orders, with no useCallback/useMemo, no tiny wrappers, no one-line ifs and no unrelated rewrites.
+context:
+  scaffold_script: place-files.sh

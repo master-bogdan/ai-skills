@@ -1,6 +1,7 @@
 ---
 name: twelve-factor-app
 description: Audit a repository for 12-factor app compliance and write a scored report to docs/twelve-factor-report.md. Use when explicitly invoked with /twelve-factor, "audit 12-factor", "check 12-factor compliance", or "is this app 12-factor".
+disable-model-invocation: true
 ---
 
 # 12-Factor App Audit
